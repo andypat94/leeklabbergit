@@ -1,3 +1,4 @@
+import LLObject
 
 
 class LLDevice(LLObject):

@@ -1,0 +1,4 @@
+
+
+class LLDevice(LLObject):
+    pass

@@ -1,0 +1,4 @@
+
+
+class LLInstrument(LLObject):
+    pass

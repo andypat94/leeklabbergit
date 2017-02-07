@@ -1,4 +1,4 @@
-import LLObject
+from LeekLabber import *
 
 
 class LLInstrument(LLObject):

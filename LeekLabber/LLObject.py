@@ -7,6 +7,12 @@ class LLObjectParameter(object):
     PTYPE_FLOAT = 2
     PTYPE_STR   = 3
     PTYPE_NUMPY = 4
+    PTYPE_LLOBJECT = 5
+    PTYPE_LLPARAMETER = 6
+    PTYPE_LLPARAMETER_LIST = 7
+    PTYPE_LLOBJECT_LIST = 8
+    PTYPE_UNKNOWN_LIST = 254
+    PTYPE_UNKNOWN = 255
 
     def __init__(self, ref_obj, var_name, label=None, ptype=None, value_list=None, unit='', xvals=None, xlabel=None, xunit=None):
         super(LLObjectParameter, self).__init__()
@@ -17,7 +23,21 @@ class LLObjectParameter(object):
         self.label = label
         if ptype is None:
             val = self.get_value()
-            if isinstance(val, bool):
+            if isinstance(val, list):
+                if len(val)>0:
+                    if isinstance(val[0], LLObjectParameter):
+                        ptype = self.PTYPE_LLPARAMETER_LIST
+                    if isinstance(val[0], LLObject):
+                        ptype = self.PTYPE_LLOBJECT_LIST
+                    else:
+                        ptype = self.PTYPE_UNKNOWN_LIST
+                else:
+                    ptype = self.PTYPE_UNKNOWN_LIST
+            elif isinstance(val, LLObject):
+                ptype =  self.PTYPE_LLOBJECT
+            elif isinstance(val, LLObjectParameter):
+                ptype = self.PTYPE_LLPARAMETER
+            elif isinstance(val, bool):
                 ptype = self.PTYPE_BOOL
             elif isinstance(val, int):
                 ptype = self.PTYPE_INT
@@ -50,12 +70,19 @@ class LLObject(object):
 
     def get_parameter(self, label):
         for param in self.LLObjectParameters:
-            if param.label == item:
+            if param.label == label:
                 return param
         return None
 
     def __getitem__(self, item):
         if isinstance(item, str):
-            return self.get_parameter(item)
+            return self.get_parameter(item).get_value()
         else:
             return None
+
+    def __setitem__(self, item, val):
+        if isinstance(item, str):
+            return self.get_parameter(item).set_value(val)
+        else:
+            return None
+

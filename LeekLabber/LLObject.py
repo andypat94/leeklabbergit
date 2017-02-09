@@ -70,7 +70,7 @@ class LLObjectParameter(object):
         return retval
 
     def get_abs_path(self, topobj=None):
-        myIndex = (self.ref_obj.ll_params.index(self),)
+        myIndex = self.ref_obj.ll_params.index(self)
         return (self.ref_obj.get_abs_path(topobj),myIndex)
 
     def create_xml_element(self, parent_element=None, topobj=None):
@@ -126,6 +126,18 @@ class LLObjectParameter(object):
             objpath = path[0]
             parampath = path[1]
             self.set_value(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
+        elif self.ptype in (self.PTYPE_LLOBJECT_LIST,):
+            tmp = []
+            for objpath in literal_eval(element.text):
+                tmp.append(topobj.get_object_from_abs_path(objpath))
+            self.set_value(tmp)
+        elif self.ptype in (self.PTYPE_LLPARAMETER_LIST,):
+            tmp = []
+            for path in literal_eval(element.text):
+                objpath = path[0]
+                parampath = path[1]
+                tmp.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
+            self.set_value(tmp)
 
 
 

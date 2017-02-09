@@ -57,9 +57,8 @@ if __name__ == "__main__":
     mwcl["Transmission (Not Reflection)"] = True
     mwcl["Connected Devices"] += [qd_Q1, qd_R1]
 
-    element = LL_ROOT.create_xml_element()
-
-    newroot = LLObject.from_xml_element(element)
+    #element = LL_ROOT.create_xml_element()
+    #newroot = LLObject.from_xml_element(element)
 
     app = QtWidgets.QApplication([])
     app.setQuitOnLastWindowClosed(False)

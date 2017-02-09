@@ -1,9 +1,10 @@
 from LeekLabber import *
+import LeekLabber as LL
 
 
 class LLInstrument(LLObject):
     def __init__(self):
-        super(LLInstrument,self).__init__()
+        super(LLInstrument,self).__init__(LL.LL_ROOT.instruments)
         self.p_name = 'default'
         self.p_addr = 'default'
         self.add_parameter('p_name', label="Instrument Name")

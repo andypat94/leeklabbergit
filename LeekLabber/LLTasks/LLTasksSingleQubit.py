@@ -6,7 +6,7 @@ class LLTaskSingleQRotation(LLTask):
 
         self.p_qubit = None
         self.p_axis = 'X'
-        self.p_angle = ''
+        self.p_angle = 0.
 
         self.add_parameter('p_qubit', label="Qubit Device", ptype=LLObjectParameter.PTYPE_LLOBJECT)
         self.add_parameter('p_axis', label="Rotation Axis", value_list=['X','Y','Z'])
@@ -74,38 +74,38 @@ class LLTaskSingleQPulseGen(LLTask):
         self.add_parameter('p_rate', label="Drive Rate", unit='Hz')
         self.add_parameter('p_time', label="Drive Time", unit='s')
 
-        def create_or_update_subtasks(self):
-            if self.p_shape == 'Square':
-                if len(self.ll_children) == 0:
+    def create_or_update_subtasks(self):
+        if self.p_shape == 'Square':
+            if len(self.ll_children) == 0:
+                subtask = LLTaskSingleQPulseSquare(self)
+            else:
+                subtask = self.ll_children[0]
+                if isinstance(subtask, LLTaskSingleQPulseSquare):
+                    pass
+                else:
+                    subtask.remove()
                     subtask = LLTaskSingleQPulseSquare(self)
-                else:
-                    subtask = self.ll_children[0]
-                    if isinstance(subtask, LLTaskSingleQPulseSquare):
-                        pass
-                    else:
-                        subtask.remove()
-                        subtask = LLTaskSingleQPulseSquare(self)
+        else:
+            if len(self.ll_children) == 0:
+                subtask = LLTaskSingleQPulseGaussian(self)
             else:
-                if len(self.ll_children) == 0:
-                    subtask = LLTaskSingleQPulseGen(self)
+                subtask = self.ll_children[0]
+                if isinstance(subtask, LLTaskSingleQPulseGaussian):
+                    pass
                 else:
-                    subtask = self.ll_children[0]
-                    if isinstance(subtask, LLTaskSingleQPulseGen):
-                        pass
-                    else:
-                        subtask.remove()
-                        subtask = LLTaskSingleQPulseGen(self)
+                    subtask.remove()
+                    subtask = LLTaskSingleQPulseGaussian(self)
 
-            subtask["Qubit Device"] = self.p_qubit
-            if self.p_fixed_time:
-                subtask["Pulse Length"] = self.p_time
-                subtask["Pulse Amplitude"] = 1.0 #should calculate
-            else:
-                subtask["Pulse Amplitude"] = self.p_rate
-                subtask["Pulse Length"] = 100.0e-9 #should calculate
-            subtask["Pulse Phase"] = self.p_drive_phi
+        subtask["Qubit Device"] = self.p_qubit
+        if self.p_fixed_time:
+            subtask["Pulse Length"] = self.p_time
+            subtask["Pulse Amplitude"] = 1.0 #should calculate
+        else:
+            subtask["Pulse Amplitude"] = self.p_rate
+            subtask["Pulse Length"] = 100.0e-9 #should calculate
+        subtask["Pulse Phase"] = self.p_drive_phi
 
-            super(LLTaskSingleQRotation, self).create_or_update_subtasks()
+        super(LLTaskSingleQPulseGen, self).create_or_update_subtasks()
 
 class LLTaskSingleQChangeBasis(LLTask):
     def __init__(self, parent=None):

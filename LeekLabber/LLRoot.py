@@ -1,4 +1,6 @@
 from LeekLabber import *
+from LLTask import *
+from LLObject import *
 
 class LLRoot(LLObject):
     def __init__(self):

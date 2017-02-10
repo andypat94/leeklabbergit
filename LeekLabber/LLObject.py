@@ -98,7 +98,10 @@ class LLObjectParameter(object):
             else:
                 tuple = ()
                 for obj in val:
-                    tuple += (obj.get_abs_path(),)
+                    if obj is None:
+                        tuple += (None,)
+                    else:
+                        tuple += (obj.get_abs_path(),)
                 element.text = str(tuple)
         elif self.ptype in (self.PTYPE_UNKNOWN,self.PTYPE_UNKNOWN_LIST):
             element.text = ""
@@ -120,23 +123,41 @@ class LLObjectParameter(object):
             array.reshape(shape)
             self.set_value(array)
         elif self.ptype in (self.PTYPE_LLOBJECT,):
-            self.set_value(topobj.get_object_from_abs_path(literal_eval(element.text)))
+            if element.text=="":
+                self.set_value(None)
+            else:
+                self.set_value(topobj.get_object_from_abs_path(literal_eval(element.text)))
         elif self.ptype in (self.PTYPE_LLPARAMETER,):
-            path = literal_eval(element.text)
-            objpath = path[0]
-            parampath = path[1]
-            self.set_value(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
+            if element.text=="":
+                self.set_value(None)
+            else:
+                path = literal_eval(element.text)
+                objpath = path[0]
+                parampath = path[1]
+                self.set_value(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
         elif self.ptype in (self.PTYPE_LLOBJECT_LIST,):
             tmp = []
-            for objpath in literal_eval(element.text):
-                tmp.append(topobj.get_object_from_abs_path(objpath))
+            if element.text=="":
+                pass
+            else:
+                for objpath in literal_eval(element.text):
+                    if objpath is None:
+                        tmp.append(None)
+                    else:
+                        tmp.append(topobj.get_object_from_abs_path(objpath))
             self.set_value(tmp)
         elif self.ptype in (self.PTYPE_LLPARAMETER_LIST,):
             tmp = []
-            for path in literal_eval(element.text):
-                objpath = path[0]
-                parampath = path[1]
-                tmp.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
+            if element.text=="":
+                pass
+            else:
+                for path in literal_eval(element.text):
+                    if path is None:
+                        tmp.append(None)
+                    else:
+                        objpath = path[0]
+                        parampath = path[1]
+                        tmp.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
             self.set_value(tmp)
 
 

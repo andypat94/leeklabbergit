@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets
 from LeekLabber import *
 import LeekLabber.LLDevices as LLDevices
 import LeekLabber.LLInstruments as LLInstruments
+import LeekLabber.LLTasks as LLTasks
 import xml.etree.ElementTree as xmlet
 
 if __name__ == "__main__":
@@ -57,8 +58,14 @@ if __name__ == "__main__":
     mwcl["Transmission (Not Reflection)"] = True
     mwcl["Connected Devices"] += [qd_Q1, qd_R1]
 
-    #element = LL_ROOT.create_xml_element()
-    #newroot = LLObject.from_xml_element(element)
+    # prepare an experiment with a single qubit rotation
+    gate = LLTasks.LLTaskSingleQRotation(LL_ROOT.task)
+    LL_ROOT.task.create_or_update_subtasks()
+
+    LL_ROOT.task.execute() # do it!
+
+    element = LL_ROOT.create_xml_element()
+    newroot = LLObject.from_xml_element(element)
 
     app = QtWidgets.QApplication([])
     app.setQuitOnLastWindowClosed(False)

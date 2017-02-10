@@ -1,4 +1,5 @@
 from LeekLabber import *
+import LeekLabber as LL
 
 class LLTask(LLObject):
     def __init__(self, parent=None):
@@ -9,14 +10,19 @@ class LLTask(LLObject):
         for child in [child for child in self.ll_children if isinstance(child, LLTask)]:
             child.create_or_update_subtasks()
 
-    def prepare_experiment(self):
+    def prepare_experiment(self, exp_setup):
         # prepare all child tasks also
         for child in [child for child in self.ll_children if isinstance(child, LLTask)]:
-            child.prepare_experiment()
+            child.prepare_experiment(exp_setup)
 
-    def process_experiment(self):
+    def process_experiment(self, exp_setup):
         # allow all child tasks to process also
         for child in [child for child in self.ll_children if isinstance(child, LLTask)]:
-            child.process_experiment()
+            child.process_experiment(exp_setup)
 
-
+    def execute(self, exp_setup=None): #execute as the top level task on an experimental setup as passed in
+        if exp_setup is None:
+            exp_setup =  LL.LL_ROOT.expsetups[0]
+        self.prepare_experiment(exp_setup)
+        #exp_setup.execute()
+        self.process_experiment(exp_setup)

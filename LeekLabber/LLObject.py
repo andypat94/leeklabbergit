@@ -150,6 +150,11 @@ class LLObject(object):
         self.ll_parent = None
         self.set_parent(parent)
 
+    def remove(self):
+        self.set_parent(None)
+        for child in self.ll_children:
+            child.remove()
+
     def set_parent(self, parent):
         if self.ll_parent==parent:
             return

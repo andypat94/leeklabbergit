@@ -1,7 +1,7 @@
 from LeekLabber import *
 
 
-class LLDeviceSimpleResonator(LLDevice):
+class LLDeviceSimpleResonator(LLMicrowaveDevice):
     def __init__(self):
         super(LLDeviceSimpleResonator,self).__init__()
 

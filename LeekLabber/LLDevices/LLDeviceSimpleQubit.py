@@ -1,7 +1,7 @@
 from LeekLabber import *
 
 
-class LLDeviceSimpleQubit(LLDevice):
+class LLDeviceSimpleQubit(LLMicrowaveDevice):
     def __init__(self):
         super(LLDeviceSimpleQubit,self).__init__()
 

@@ -14,10 +14,7 @@ class LLMicrowaveDevice(LLDevice):
     def __init__(self):
         super(LLMicrowaveDevice, self).__init__()
 
-        self.p_mwcls = []
-
-        self.add_parameter('p_mwcls', label="Microwave Control Lines", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
-
+        self.mwcls = []
 
 class LLDeviceCoupling(LLObject):
     def __init__(self, objA=None, objB=None, value=0.0, coupling_type='g',unit='Hz'):

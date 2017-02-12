@@ -19,6 +19,7 @@ class LLMicrowaveControlLine(LLObject):
         self.p_adc_channel_q = np.arange(self.p_n_readouts,dtype='int')
         self.p_s21_not_s11 = True
         self.p_devices = []
+        self.prev_devices = []
 
         # Register parameters
         self.add_parameter('p_n_drives',label="Number of Drives",onChange=self.resize_lists)

@@ -131,6 +131,30 @@ class LLTaskSingleQPulseSquare(LLTask):
         self.add_parameter('p_amplitude', label="Pulse Amplitude", unit='V')
         self.add_parameter('p_phase', label="Pulse Phase", unit='pi')
 
+    def prepare_experiment(self):
+        # Ask experimental setup to prepare to send a microwave drive at this frequency, power etc.
+        self.p_qubit.prepare_microwave_drive(freq=10.0e9, power=20.0, pulsed=True, measured=True)
+        self.p_qubit.prepare_microwave_drive(freq=6.1e9, power=20.0, pulsed=True, measured=False)
+        self.p_qubit.prepare_microwave_drive(freq=6.4e9, power=20.0, pulsed=True, measured=False)
+        #self.p_qubit.prepare_microwave_drive(freq=10.9e9, power=20.0, pulsed=True, measured=False)
+        #self.p_qubit.prepare_microwave_drive(freq=10.9e9, power=20.0, pulsed=True, measured=False)
+
+        # allow any child tasks to be processed
+        super(LLTaskSingleQPulseSquare,self).prepare_experiment()
+
+    def submit_experiment(self):
+
+        t = self.p_qubit.get_timebase(self.p_length, self.p_qubit["Frequency"], 20.0) # get timebase for required pulse time, freq, power
+        if t is None:
+            t = np.arange(1000.,dtype='double')
+        i = np.empty(len(t),dtype='double')
+        q = np.empty(len(t),dtype='double')
+        i.fill(np.cos(self.p_phase*np.pi))
+        q.fill(np.sin(self.p_phase*np.pi))
+        self.p_qubit.submit_pulse(i, q, self.p_qubit["Frequency"], 20.0) # default frequency is just the microwave device frequency
+
+        # allow any child tasks to be processed
+        super(LLTaskSingleQPulseSquare,self).submit_experiment()
 
 class LLTaskSingleQPulseGaussian(LLTask):
     def __init__(self, parent = None):

@@ -60,12 +60,15 @@ if __name__ == "__main__":
 
     # prepare an experiment with a single qubit rotation
     gate = LLTasks.LLTaskSingleQRotation(LL_ROOT.task)
+    gate["Qubit Device"] = qd_Q1 #qubit 1
+    gate["Rotation Axis"] = 'X' # drive on X
+    gate["Rotation Angle"] = 1.0 # pi pulse
     LL_ROOT.task.create_or_update_subtasks()
 
     LL_ROOT.task.execute() # do it!
 
-    element = LL_ROOT.create_xml_element()
-    newroot = LLObject.from_xml_element(element)
+    #element = LL_ROOT.create_xml_element()
+    #newroot = LLObject.from_xml_element(element)
 
     app = QtWidgets.QApplication([])
     app.setQuitOnLastWindowClosed(False)

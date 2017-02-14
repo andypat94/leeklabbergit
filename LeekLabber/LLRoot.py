@@ -24,5 +24,5 @@ class LLRoot(LLObject):
         root.instruments = LLObject(root)
         root.expsetups = LLObject(root)
         root.couplings = LLObject(root)
-        root.task = LLTask(root)
+        root.task = LLTaskDelay(root)
         return root

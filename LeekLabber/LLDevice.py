@@ -44,7 +44,7 @@ class LLMicrowaveDevice(LLDevice):
     def prepare_microwave_drive(self, freq, power, pulsed, measured):
         self.mwcl.prepare_microwave_drive(freq, power, pulsed, measured, self)
 
-    def get_timebase(self, time, freq, power):
+    def get_timeslot(self, time, freq, power):
         return self.mwcl.get_timebase(time, freq, power)
 
     def submit_pulse(self, DC_I, DC_Q, freq, power):
@@ -59,8 +59,8 @@ class LLDeviceCoupling(LLObject):
         self.p_value = value
         self.p_coupling_type = coupling_type
 
-        self.add_parameter('p_devA', label="Device A", ptype=LLObjectParameter.PTYPE_LLOBJECT)#, onChange=self.couplings_changed)
-        self.add_parameter('p_devB', label="Device B", ptype=LLObjectParameter.PTYPE_LLOBJECT)#, onChange=self.couplings_changed)
+        self.add_parameter('p_devA', label="Device A", ptype=LLObjectParameter.PTYPE_LLOBJECT) #, onChange=self.couplings_changed)
+        self.add_parameter('p_devB', label="Device B", ptype=LLObjectParameter.PTYPE_LLOBJECT) #, onChange=self.couplings_changed)
         self.add_parameter('p_value', label="Coupling Strength", unit=unit)
         self.add_parameter('p_coupling_type', label="Coupling Type")
 

@@ -7,14 +7,6 @@ import xml.etree.ElementTree as xmlet
 
 if __name__ == "__main__":
 
-    # Create Quantum Devices
-    qd_Q1 = LLDevices.LLDeviceSimpleQubit()
-    qd_Q1["Frequency"] = 6.0e9
-    qd_R1 = LLDevices.LLDeviceSimpleResonator()
-    qd_R1["Frequency"] = 9.0e9
-
-    LLDeviceCoupling(qd_Q1, qd_R1, 10.0e6, 'Chi')
-
     # Create Instruments
     i_SGS_QUBIT = LLInstruments.LLInstrumentRSSGS()
     i_SGS_QUBIT['Instrument Name'] = "Qubit Generator"
@@ -28,6 +20,15 @@ if __name__ == "__main__":
     i_FPGABOX = LLInstruments.LLInstrument4DSPBox()
     i_FPGABOX['Instrument Name'] = "4DSP FPGABOX"
     i_FPGABOX['Instrument Address'] = ""
+
+    # Create Quantum Devices
+    qd_Q1 = LLDevices.LLDeviceSimpleQubit()
+    qd_Q1["Frequency"] = 6.0e9
+    qd_R1 = LLDevices.LLDeviceSimpleResonator()
+    qd_R1["Frequency"] = 9.0e9
+
+    # Assign couplings between devices
+    LLDeviceCoupling(qd_Q1, qd_R1, 10.0e6, 'Chi')
 
     # Create an Experimental Setup
     exp_setup = LLExpSetup()
@@ -58,19 +59,23 @@ if __name__ == "__main__":
     mwcl["Transmission (Not Reflection)"] = True
     mwcl["Connected Devices"] += [qd_Q1, qd_R1]
 
-    # prepare an experiment with a single qubit rotation
-    gate = LLTasks.LLTaskSingleQRotation(LL_ROOT.task)
+    # Prepare an experiment with a single qubit rotation
+    gate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
     gate["Qubit Device"] = qd_Q1 #qubit 1
     gate["Rotation Axis"] = 'X' # drive on X
     gate["Rotation Angle"] = 1.0 # pi pulse
-    LL_ROOT.task.create_or_update_subtasks()
 
-    LL_ROOT.task.execute() # do it!
+    LL.LL_ROOT.task.create_or_update_subtasks_internal()
 
-    #element = LL_ROOT.create_xml_element()
-    #newroot = LLObject.from_xml_element(element)
+    LL.LL_ROOT.task.execute() # do it!
 
-    app = QtWidgets.QApplication([])
-    app.setQuitOnLastWindowClosed(False)
-    app.exec_()
+    # element = LL.LL_ROOT.create_xml_element()
+    # newroot = LLObject.from_xml_element(element)
+    # LL.LL_ROOT = newroot
+    # LL.LL_ROOT.task.create_or_update_subtasks_internal()
+    # LL.LL_ROOT.task.execute()
+
+    #app = QtWidgets.QApplication([])
+    #app.setQuitOnLastWindowClosed(False)
+    #app.exec_()
 

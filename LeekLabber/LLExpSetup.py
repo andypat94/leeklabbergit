@@ -272,13 +272,17 @@ class LLMicrowaveDriveHelper:
 
     def choose_lo_frequency(self, ifwindow):
         # TODO: could definitely choose this more intelligently
-        span = self.maxfreq - self.minfreq
-        if(span < ifwindow * 0.4):
-            self.lo_frequency =  (self.maxfreq + self.minfreq)/2. - 0.25 * ifwindow
-        elif(span < ifwindow * 0.9):
-            self.lo_frequency = (self.maxfreq + self.minfreq)/2. - 0.05 * ifwindow
+        if(self.pulsed):
+            span = self.maxfreq - self.minfreq
+            if(span < ifwindow * 0.4):
+                self.lo_frequency =  (self.maxfreq + self.minfreq)/2. - 0.25 * ifwindow
+            elif(span < ifwindow * 0.9):
+                self.lo_frequency = (self.maxfreq + self.minfreq)/2. - 0.05 * ifwindow
+            else:
+                self.lo_frequency = (self.maxfreq + self.minfreq)/2.
         else:
-            self.lo_frequency = (self.maxfreq + self.minfreq)/2.
+            self.lo_frequency = self.maxfreq
+
 
     def print_summary(self):
         print("LO: " + str(self.lo_frequency))

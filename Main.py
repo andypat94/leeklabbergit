@@ -5,6 +5,8 @@ import LeekLabber.LLInstruments as LLInstruments
 import LeekLabber.LLTasks as LLTasks
 import xml.etree.ElementTree as xmlet
 
+import matplotlib.pyplot as plt
+
 if __name__ == "__main__":
 
     # Create Instruments
@@ -63,7 +65,33 @@ if __name__ == "__main__":
     gate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
     gate["Qubit Device"] = qd_Q1 #qubit 1
     gate["Rotation Axis"] = 'X' # drive on X
-    gate["Rotation Angle"] = 1.0 # pi pulse
+    gate["Rotation Angle"] = 0.5 # pi pulse
+
+    gate2 = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+    gate2["Delay Time"] = 1e-6
+    gate2["Task Dependences"] = [gate,]
+
+    gate3 = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
+    gate3["Qubit Device"] = qd_Q1 #qubit 1
+    gate3["Rotation Axis"] = 'X' # drive on X
+    gate3["Rotation Angle"] = 0.5 # pi pulse
+    gate3["Task Dependences"] = [gate2,]
+
+    #large number of gates test
+    prevGate = gate3
+    for i in range(100):
+        nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+        nextGate["Delay Time"] = np.random.rand(1)[0]*1000.0e-9
+        nextGate["Task Dependences"] = [gate3,]
+        prevGate=nextGate
+
+        nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
+        nextGate["Qubit Device"] = qd_Q1  # qubit 1
+        nextGate["Rotation Axis"] = 'X'  # drive on X
+        nextGate["Rotation Angle"] = 0.5  # pi pulse
+        nextGate["Task Dependences"] = [prevGate, ]
+        prevGate=nextGate
+
 
     LL.LL_ROOT.task.create_or_update_subtasks_internal()
 
@@ -75,7 +103,14 @@ if __name__ == "__main__":
     # LL.LL_ROOT.task.create_or_update_subtasks_internal()
     # LL.LL_ROOT.task.execute()
 
-    #app = QtWidgets.QApplication([])
-    #app.setQuitOnLastWindowClosed(False)
-    #app.exec_()
+    # app = QtWidgets.QApplication([])
+    # app.setQuitOnLastWindowClosed(False)
+    # app.exec_()
+
+    plt.plot(i_FPGABOX.get_parameter("2GS DAC Data").get_xvals(),i_FPGABOX["2GS DAC Data"][0])
+    plt.plot(i_FPGABOX.get_parameter("2GS DAC Data").get_xvals(),i_FPGABOX["2GS DAC Data"][1])
+    #plt.plot(i_FPGABOX.get_parameter("1GS DAC Data").get_xvals(),i_FPGABOX["1GS DAC Data"][0])
+    #plt.plot(i_FPGABOX.get_parameter("1GS DAC Data").get_xvals(),i_FPGABOX["1GS DAC Data"][1])
+    plt.ylabel('some numbers')
+    plt.show()
 

@@ -4,6 +4,12 @@ import numpy as np
 
 class LLMicrowaveControlLine(LLObject):
     def __init__(self, exp_setup=None, NDrives=2, NReadouts=1):
+
+        self.MEAS_IF_WINDOW = 500.0e6 # Hz
+        self.DRIV_IF_WINDOW = 1000.0e6
+        self.POWER_WINDOW = 20. # dBm
+        self.FREQ_TOLERANCE = 1e3 # 1kHz tolerance
+
         super(LLMicrowaveControlLine, self).__init__(exp_setup)
 
         # Add local parameters
@@ -19,7 +25,6 @@ class LLMicrowaveControlLine(LLObject):
         self.p_adc_channel_q = np.arange(self.p_n_readouts,dtype='int')
         self.p_s21_not_s11 = True
         self.p_devices = []
-        self.prev_devices = []
 
         # Register parameters
         self.add_parameter('p_n_drives',label="Number of Drives",onChange=self.resize_lists)
@@ -64,22 +69,59 @@ class LLMicrowaveControlLine(LLObject):
         for dev in self.p_devices:
             dev.add_mwcl_ref(self)
 
-    def get_timebase(self, time, freq, power):
-        # needs to have an idea of which devices are using which timebase already before pulses are submitted?
-        return np.arange(1000.,dtype='double')
+    def select_drive(self, pulse):
+        if pulse.measured:
+            first_list = self.mapped_pulsed_measured_drives
+            second_list = self.mapped_pulsed_unmeasured_drives
+        else:
+            second_list = self.mapped_pulsed_measured_drives
+            first_list = self.mapped_pulsed_unmeasured_drives
+
+        def test_drives(pulse, drives):
+            for drive in drives:
+                if (pulse.freq >= drive.minfreq
+                        and pulse.freq <= drive.maxfreq
+                        and pulse.power <= drive.power
+                        and pulse.power >= drive.power - self.POWER_WINDOW ):
+                    return drive
+            return None
+
+        selected_drive = test_drives(pulse, first_list)
+        if selected_drive is None:
+            selected_drive = test_drives(pulse, second_list)
+        if selected_drive is None:
+            print("A pulse could not find a driver.")
+        return selected_drive
+
+    def get_timebase(self, time, freq, power, measured):
+        #todo: don't just make the array, grab it from a premade one?
+        guess_drive = self.select_drive(LLPulseHelper(time=time, t=None, DC_I=None, DC_Q=None, freq=freq, power=power, device=None,measured=measured,basis_phase=0.0))
+        dt = guess_drive.timestep
+        N = int((time+0.5*dt)/dt)
+        return np.linspace(start=0.0,stop=time,num=N,endpoint=False)
 
     def clear_needed_mw_drives(self):
         self.needed_mw_drives = []
+
+    def clear_pulses(self):
+        self.submitted_pulses = []
 
     def prepare_microwave_drive(self, freq, power, pulsed, measured, device):
         self.needed_mw_drives.append(LLMicrowaveDriveHelper(freq, power, pulsed, measured, device))
         self.ll_parent.prepare_microwave_drive(freq,power,pulsed, measured,device,self)
 
-    def submit_pulse(self, DC_I, DC_Q, freq, device):
-        self.ll_parent.submit_pulse(DC_I,DC_Q,freq, device, self)
+    #todo: would be cool if get_timeslot returned a pulse helper object that could then be later submitted with the envelope info.
+    def submit_pulse(self, pulse_helper_obj):
+        self.submitted_pulses.append(pulse_helper_obj)
 
     def plan_experiment(self):
+        print("drive mapping started..")
+
         # TODO: implement even better planning algorithm
+
+        MEAS_IF_WINDOW = self.MEAS_IF_WINDOW
+        DRIV_IF_WINDOW = self.DRIV_IF_WINDOW
+        POWER_WINDOW = self.POWER_WINDOW
 
         def clone_drives(drives):
             tmp = []
@@ -118,6 +160,8 @@ class LLMicrowaveControlLine(LLObject):
                             min_distance = distance
                             min_i = i
                             min_j = j
+                            if(min_distance < self.FREQ_TOLERANCE): #provides a huge speedup when dealing with many pulses at the same frequencies
+                                return (min_distance, min_i, min_j)
             return (min_distance,min_i,min_j)
 
         def group_drives(drives,window,powerwindow):
@@ -130,12 +174,9 @@ class LLMicrowaveControlLine(LLObject):
                 else:
                     loop = False
 
-        IF_WINDOW = 500.0e6 # Hz
-        POWER_WINDOW = 20. # dBm
-
         ## FIRST LETS JUST TRY COMBINING UP PULSED DRIVES
-        for drives in (p_m_ds, p_um_ds):
-            group_drives(drives, IF_WINDOW, POWER_WINDOW)
+        group_drives(p_m_ds, MEAS_IF_WINDOW, POWER_WINDOW)
+        group_drives(p_um_ds, DRIV_IF_WINDOW, POWER_WINDOW)
 
         num_readout_gens = len(p_m_ds) + len(c_m_ds)
         num_control_gens = len(p_m_ds) + len(c_m_ds) + len(p_um_ds) + len(c_um_ds)
@@ -155,8 +196,8 @@ class LLMicrowaveControlLine(LLObject):
             all_ds = (m_ds, um_ds)
 
         if(combine_continuous_drives):
-            for drives in (m_ds, um_ds):
-                group_drives(drives, IF_WINDOW, POWER_WINDOW)
+            group_drives(m_ds, MEAS_IF_WINDOW, POWER_WINDOW)
+            group_drives(um_ds, DRIV_IF_WINDOW, POWER_WINDOW)
 
             num_readout_gens = len(m_ds)
             num_control_gens = len(m_ds) +  len(um_ds)
@@ -171,7 +212,7 @@ class LLMicrowaveControlLine(LLObject):
                 ds = clone_drives(self.needed_mw_drives)
                 all_ds = ( ds,)
 
-                group_drives(ds, IF_WINDOW, POWER_WINDOW)
+                group_drives(ds, MEAS_IF_WINDOW, POWER_WINDOW)
 
                 num_readout_gens = len([drive for drive in ds if drive.measured])
                 num_control_gens = len(ds)
@@ -184,6 +225,7 @@ class LLMicrowaveControlLine(LLObject):
 
         if failed:
             print("Failed to map drives to experimental setup")
+            return
         else:
             if combine_all:
                 print("Measurement and control drives have been mixed to enable drive mapping")
@@ -200,7 +242,7 @@ class LLMicrowaveControlLine(LLObject):
 
         for drive in self.mapped_mw_ds:
             if drive.measured:
-                drive.choose_lo_frequency(IF_WINDOW)
+                drive.choose_lo_frequency(MEAS_IF_WINDOW)
                 drive.drive_id = id
                 drive.readout_id = id
                 drive.drive_generator = self.p_drive_gens[id]
@@ -209,13 +251,76 @@ class LLMicrowaveControlLine(LLObject):
 
         for drive in self.mapped_mw_ds:
             if not drive.measured:
-                drive.choose_lo_frequency(IF_WINDOW)
+                drive.choose_lo_frequency(DRIV_IF_WINDOW)
                 drive.drive_id = id
                 drive.drive_generator = self.p_drive_gens[id]
                 id += 1
 
         for drive in self.mapped_mw_ds:
+            drive.dac_link(self.p_dac_data,self.p_dac_channel_i,self.p_dac_channel_q)
+
+        for drive in self.mapped_mw_ds:
             drive.print_summary()
+
+        self.mapped_pulsed_drives = select_pulsed(self.mapped_mw_ds, True)
+        self.mapped_pulsed_measured_drives = select_measured(self.mapped_pulsed_drives, True)
+        self.mapped_pulsed_unmeasured_drives = select_measured(self.mapped_pulsed_drives, False)
+
+    def process_pulses(self):
+        print("Processing " + str(len(self.submitted_pulses)) + " pulses.")
+
+        #todo: add cacheing of some of this stuff to improve speed
+        for pulse in self.submitted_pulses:
+            selected_drive = self.select_drive(pulse)
+            pulse.drive = selected_drive
+            if selected_drive is not None:
+                pulse.start_N = int((pulse.start_time/pulse.drive.timestep)+0.5)
+                pulse.length_N = len(pulse.t)
+                pulse.end_N = pulse.start_N+pulse.length_N
+                pulse.real_start_time =pulse.length_N * pulse.drive.timestep
+                #time_error = pulse.length_N*pulse.drive.timestep-pulse.start_time
+
+                pulse.drive_amp_scale = 10.0**((selected_drive.power-pulse.power)/20.0)
+                pulse.if_freq = pulse.freq-selected_drive.lo_frequency
+                pulse.initial_phase = 2.0*np.pi*pulse.if_freq*pulse.real_start_time - np.pi*pulse.basis_phase
+
+                cosbp = pulse.drive_amp_scale*np.cos(pulse.initial_phase)
+                sinbp = pulse.drive_amp_scale*np.sin(pulse.initial_phase)
+                pulse.DC_I_B = cosbp*pulse.DC_I - sinbp*pulse.DC_Q
+                pulse.DC_Q_B = sinbp*pulse.DC_I + cosbp*pulse.DC_Q
+
+                cosift = np.cos(2.0*np.pi*pulse.if_freq*pulse.t)
+                sinift = np.sin(2.0*np.pi*pulse.if_freq*pulse.t)
+                pulse.AC_I = cosift*pulse.DC_I_B -sinift*pulse.DC_Q_B
+                pulse.AC_Q = sinift*pulse.DC_I_B +cosift*pulse.DC_Q_B
+
+    def commit_dac_data(self, experiment_length):
+        # prepare memory
+        for drive in self.mapped_pulsed_drives:
+            # resize arrays if necessary, also ensures link to dac data is good for all drives
+            drive.dac_link(self.p_dac_data,self.p_dac_channel_i,self.p_dac_channel_q)
+            drive.dac_resize(experiment_length)
+            drive.dac_link(self.p_dac_data, self.p_dac_channel_i, self.p_dac_channel_q)
+            # zero the arrays
+            drive.dac_data_i.fill(0.)
+            drive.dac_data_q.fill(0.)
+        # copy pulse data to memory
+        for pulse in self.submitted_pulses:
+            pulse.drive.dac_data_i[pulse.start_N:pulse.end_N] = pulse.AC_I
+            pulse.drive.dac_data_q[pulse.start_N:pulse.end_N] = pulse.AC_Q
+        # check to see if overlapping  pulses have caused an amplitude > 1.0, change power to compensate
+        for drive in self.mapped_pulsed_drives:
+            max_i = np.abs(drive.dac_data_i).max()
+            max_q = np.abs(drive.dac_data_q).max()
+            if max_i>max_q:
+                max = max_i
+            else:
+                max = max_q
+            if max>1.0:
+                drive.dac_data_i = drive.dac_data_i/max
+                drive.dac_data_q = drive.dac_data_q/max
+                drive.power = drive.power + 20.0*np.log10(max)
+
 
 class LLMicrowaveDriveHelper:
     def __init__(self,freq,power,pulsed,measured,device):
@@ -235,6 +340,9 @@ class LLMicrowaveDriveHelper:
         self.drive_id = -1
         self.readout_generator = None
         self.drive_generator = None
+
+        self.timestep=0.0
+
 
     def absorb(self, another):
         if another.maxfreq>self.maxfreq:
@@ -274,6 +382,7 @@ class LLMicrowaveDriveHelper:
         # TODO: could definitely choose this more intelligently
         if(self.pulsed):
             span = self.maxfreq - self.minfreq
+            print span, ifwindow*0.4
             if(span < ifwindow * 0.4):
                 self.lo_frequency =  (self.maxfreq + self.minfreq)/2. - 0.25 * ifwindow
             elif(span < ifwindow * 0.9):
@@ -294,6 +403,70 @@ class LLMicrowaveDriveHelper:
         for i in range(1,len(self.frequencies)):
             print("        " + str(self.frequencies[i]-self.lo_frequency))
 
+    def dac_link(self, p_dac_data, p_dac_channel_i, p_dac_channel_q):
+        self.dac_data = p_dac_data[self.drive_id]  # dac_data is an LLObjectParameter
+        self.dac_data_index_i = p_dac_channel_i[self.drive_id]
+        self.dac_data_index_q = p_dac_channel_q[self.drive_id]
+        self.dac_data_i = self.dac_data.get_value()[self.dac_data_index_i]
+        self.dac_data_q = self.dac_data.get_value()[self.dac_data_index_q]
+        self.tvals = self.dac_data.get_xvals()
+        self.timestep = self.tvals[1] - self.tvals[0]
+
+    def dac_resize(self, time):
+        samples =  int((time/self.timestep)+0.5)
+        oldref = self.dac_data.get_value()
+        shape = oldref.shape
+        if shape[-1] != samples:
+            shape = list(shape)
+            shape[-1] = samples
+            self.dac_data.set_value(np.resize(oldref, shape))
+            t = np.linspace(start=0.0, stop=time, num=samples, endpoint=False)
+            self.dac_data.set_xvals(t)
+
+class LLPulseHelper():
+    def __init__(self, time, t, DC_I, DC_Q, freq, power,device,measured,basis_phase):
+
+        self.start_time = time
+        self.t = t
+        self.DC_I = DC_I
+        self.DC_Q = DC_Q
+        self.freq = freq
+        self.power = power
+        self.device = device
+        self.measured = measured
+        self.basis_phase = 0.0
+
+        self.drive = None
+        self.drive_amp_scale = 1.0
+        self.if_freq = 0.
+
+class LLPulse(LLObject):
+    def __init__(self):
+        self.p_start_time = 0.0
+        self.p_tvals = None
+        self.p_dc_i = None
+        self.p_dc_q = None
+        self.p_freq = 0.
+        self.p_power = 0.
+        self.p_measured = False
+        self.p_basis_phase = 0.
+        self.p_if_freq = 0.
+        self.p_drive_amp_scale = 1.
+
+        self.add_parameter('p_start_time',label="Start Time",unit='s')
+        self.add_parameter('p_dc_i',label="DC I",unit='V',xvals='p_tvals',xunit='s',ptype=LLObjectParameter.PTYPE_NUMPY)
+        self.add_parameter('p_dc_q',label="DC Q",unit='V',xvals='p_tvals',xunit='s',ptype=LLObjectParameter.PTYPE_NUMPY)
+        self.add_parameter('p_tvals',label="Time Values",unit='s',ptype=LLObjectParameter.PTYPE_NUMPY)
+        self.add_parameter('p_freq',label="Absolute Frequency",unit='Hz')
+        self.add_parameter('p_power',label="Power",unit='dBm')
+        self.add_parameter('p_measured',label="Measure Response")
+        self.add_parameter('p_basis_phase',label="Drive Basis Phase", unit='pi')
+        self.add_parameter('p_if_freq',label="Intermediate Frequency", unit='Hz')
+
+        self.drive = None
+        self.drive_amp_scale = 1.0
+
+
 class LLExpSetup(LLObject):
     def __init__(self):
         super(LLExpSetup,self).__init__(LL.LL_ROOT.expsetups)
@@ -304,9 +477,6 @@ class LLExpSetup(LLObject):
     def prepare_microwave_drive(self, freq, power, pulsed, measured, device, mwcl):
         self.needed_mw_drives.append((freq,power,pulsed, measured,device,mwcl))
 
-    def submit_pulse(self, DC_I, DC_Q, freq, device, line):
-        self.submitted_pulses.append((DC_I, DC_Q, freq, device, line))
-
     def prepare_experiment(self):
         # Refresh the list of couplings and mwcls in all devices
         # TODO: In future it would be good to only do these things if they are really necessary?
@@ -316,11 +486,11 @@ class LLExpSetup(LLObject):
             dev.clear_mwcl_refs()
 
         self.needed_mw_drives = [] # clear all microwave drives requested last time
-        self.submitted_pulses = [] # clear all pulses submitted last time
+        #self.submitted_pulses = [] # clear all pulses submitted last time
 
         for mwcl in self.p_mwcls:
             mwcl.clear_needed_mw_drives()
-            #mwcl.clear_pulses()
+            mwcl.clear_pulses()
 
         for cp in LL.LL_ROOT.couplings.ll_children:
             cp.add_coupling_refs() #gives all devices a reference to any couplings associated with them
@@ -336,5 +506,16 @@ class LLExpSetup(LLObject):
         for mwcl in self.p_mwcls:
             mwcl.plan_experiment()
 
-    def execute(self):
-        print ("processing " + str(len(self.submitted_pulses)) + " submitted pulses.")
+    def execute(self, experiment_length):
+
+        for mwcl in self.p_mwcls:
+            mwcl.process_pulses()
+
+        for mwcl in self.p_mwcls:
+            mwcl.commit_dac_data(experiment_length)
+
+        # for mwcl in self.p_mwcls:
+        #     mwcl.commit_gen_settings()
+        #
+        # for mwcl in self.p_mwcls:
+        #     mwcl.retrieve_adc_data()

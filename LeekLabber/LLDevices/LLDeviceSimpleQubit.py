@@ -19,3 +19,4 @@ class LLDeviceSimpleQubit(LLMicrowaveDevice):
         self.add_parameter('p_rabirate', label='Rabi Rate', unit='Hz')
         self.add_parameter('p_rabirate_lo_power', label='Rabi Rate LO Power', unit='dBm')
 
+        self.s_phi_offset = 0.0 # using s_ to signify a state machine variable

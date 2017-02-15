@@ -61,6 +61,13 @@ class LLObjectParameter(object):
     def get_value(self):
         return getattr(self.ref_obj, self.var_name)
 
+    def get_xvals(self):
+        return getattr(self.ref_obj, self.xvals)
+
+    def set_xvals(self, value):
+        return setattr(self.ref_obj, self.xvals, value)
+
+
     def set_value(self, value):
         retval = setattr(self.ref_obj, self.var_name, value)
         if self.onChange is None:

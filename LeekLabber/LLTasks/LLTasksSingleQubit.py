@@ -116,7 +116,7 @@ class LLTaskSingleQChangeBasis(LLTask):
         pass
 
     def submit_experiment(self):
-        pass
+        self.p_qubit.s_phi_offset += self.p_delta_phi
 
     def process_experiment(self):
         pass
@@ -137,21 +137,22 @@ class LLTaskSingleQPulseSquare(LLTask):
 
     def prepare_experiment(self):
         # Ask experimental setup to prepare to send a microwave drive at this frequency, power etc.
-        self.prepare_microwave_drive(self.p_qubit,freq=6.2e9, power=20.0, pulsed=True, measured=False)
-        self.prepare_microwave_drive(self.p_qubit,freq=10.0e9, power=20.0, pulsed=True, measured=True)
-        self.prepare_microwave_drive(self.p_qubit,freq=6.1e9, power=20.0, pulsed=True, measured=False)
-        self.prepare_microwave_drive(self.p_qubit,freq=6.4e9, power=20.0, pulsed=True, measured=False)
+        self.prepare_microwave_drive(self.p_qubit,self.p_qubit["Frequency"], power=20.0, pulsed=True, measured=False)
+        self.prepare_microwave_drive(self.p_qubit,self.p_qubit["Frequency"]-300.0e6, power=20.0, pulsed=True, measured=False)
+        #self.prepare_microwave_drive(self.p_qubit,freq=6.1e9, power=20.0, pulsed=True, measured=False)
+        #self.prepare_microwave_drive(self.p_qubit,freq=6.4e9, power=20.0, pulsed=True, measured=False)
         #self.p_qubit.prepare_microwave_drive(freq=10.9e9, power=20.0, pulsed=True, measured=False)
         #self.p_qubit.prepare_microwave_drive(freq=10.9e9, power=20.0, pulsed=True, measured=False)
+        self.prepare_microwave_drive(self.p_qubit, 10.0e9, power=-60.0, pulsed=True, measured=True)
 
     def submit_experiment(self):
         # do a pulse
-        t = self.get_timeslot(self.p_qubit, self.p_length, self.p_qubit["Frequency"], 20.0) # get timebase for required pulse time, freq, power
+        t = self.get_timeslot(device=self.p_qubit, time=self.p_length, freq=self.p_qubit["Frequency"]-300.0e6, power=20.0, measured=False) # get timebase for required pulse time, freq, power
         i = np.empty(len(t),dtype='double')
         q = np.empty(len(t),dtype='double')
         i.fill(np.cos(self.p_phase*np.pi))
         q.fill(np.sin(self.p_phase*np.pi))
-        self.submit_pulse(self.p_qubit, i, q, self.p_qubit["Frequency"], 20.0) # default frequency is just the microwave device frequency
+        self.submit_pulse(device=self.p_qubit, t=t, DC_I=i, DC_Q=q, freq=self.p_qubit["Frequency"]-300.0e6, power=20.0, measured=False, basis_phase=self.p_qubit.s_phi_offset) # default frequency is just the microwave device frequency
 
     def create_or_update_subtasks(self):
         pass

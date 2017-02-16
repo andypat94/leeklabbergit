@@ -41,14 +41,8 @@ class LLMicrowaveDevice(LLDevice):
         else:
             self.mwcl =  None
 
-    def prepare_microwave_drive(self, freq, power, pulsed, measured):
-        self.mwcl.prepare_microwave_drive(freq, power, pulsed, measured, self)
-
-    def get_timeslot(self, time, freq, power, measured):
-        return self.mwcl.get_timebase(time, freq, power, measured)
-
-    def submit_pulse(self, pulse_helper_obj):
-        self.mwcl.submit_pulse(pulse_helper_obj)
+    def prepare_pulse(self, pulse):
+        self.mwcl.prepare_pulse(pulse)
 
 class LLDeviceCoupling(LLObject):
     def __init__(self, objA=None, objB=None, value=0.0, coupling_type='g',unit='Hz'):

@@ -4,9 +4,9 @@ from LLInstrument import *
 from LLExpSetup import *
 from LLRoot import *
 from LLTask import *
+from LLMain import *
 
 from LLDevices import *
 from LLInstruments import *
 from LLTasks import *
-
-LL_ROOT = LLRoot.from_blank() #create a blank global root instance.
+from LLQt import *

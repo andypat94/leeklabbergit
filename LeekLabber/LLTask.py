@@ -7,8 +7,15 @@ class LLTask(LLObject):
         super(LLTask,self).__init__(parent)
 
         self.p_dependences = []
+        self.p_pulses = []
 
         self.add_parameter('p_dependences', label="Task Dependences", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
+        self.add_parameter('p_pulses', label="Pulses", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
+
+    def add_pulse(self):
+        pulse = LLPulse()
+        self.p_pulses.append(pulse)
+        return pulse
 
     def dependences_submitted(self):
         submitted = True
@@ -95,16 +102,15 @@ class LLTask(LLObject):
         exp_setup.execute(self.get_task_length())
         self.process_experiment_internal()
 
-    def prepare_microwave_drive(self, device, freq, power, pulsed, measured):
-        device.prepare_microwave_drive(freq, power, pulsed, measured)
+    def prepare_pulse(self, pulse, device, frequency, power, pulsed=False, measured=False):
+        pulse.prepare_pulse(device,frequency,power,pulsed,measured)
 
-    def get_timeslot(self, device, time, freq, power, measured=False):
-        self.update_task_length(time)
-        return device.get_timeslot(time, freq, power, measured)
+    def get_timebase(self, pulse, length):
+        self.update_task_length(length)
+        return pulse.get_timebase(self.timeslot_start, length)
 
-    def submit_pulse(self, device, t, DC_I, DC_Q, freq, power, measured=False, basis_phase=0.0):
-        device.submit_pulse(LLPulseHelper(time=self.timeslot_start, t=t, DC_I=DC_I, DC_Q=DC_Q, freq=freq, power=power,device=device,measured=measured,basis_phase=basis_phase))
-        #device.submit_pulse(self.timeslot_start, DC_I, DC_Q, freq, power, measured, basis_phase)
+    def submit_pulse(self, pulse, dc_i, dc_q, basis_phase=0.0):
+        pulse.submit_pulse(dc_i, dc_q, basis_phase)
 
     def submit_delay(self, delay_time):
         self.update_task_length(delay_time)

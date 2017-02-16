@@ -10,12 +10,14 @@ class LLRoot(LLObject):
         self.expsetups = None
         self.couplings = None
         self.task = None
+        self.pulses = None
 
         self.add_parameter("devices",label="Devices",ptype=LLObjectParameter.PTYPE_LLOBJECT)
         self.add_parameter("instruments",label="Instruments",ptype=LLObjectParameter.PTYPE_LLOBJECT)
         self.add_parameter("expsetups",label="Experiment Setups",ptype=LLObjectParameter.PTYPE_LLOBJECT)
         self.add_parameter("couplings",label="Couplings",ptype=LLObjectParameter.PTYPE_LLOBJECT)
         self.add_parameter("task",label="Task",ptype=LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("pulses",label="Pulses",ptype=LLObjectParameter.PTYPE_LLOBJECT)
 
     @staticmethod
     def from_blank():
@@ -25,4 +27,7 @@ class LLRoot(LLObject):
         root.expsetups = LLObject(root)
         root.couplings = LLObject(root)
         root.task = LLTaskDelay(root)
+        root.pulses = LLObject(root)
+        root.drives = LLObject(root)
         return root
+

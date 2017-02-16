@@ -274,3 +274,5 @@ class LLObject(object):
             return self.ll_children[path[0]].get_object_from_abs_path(path[1:])
         else:
             return self
+
+class LLObjectHusk()

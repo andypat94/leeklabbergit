@@ -10,3 +10,8 @@ class LLInstrument(LLObject):
         self.add_parameter('p_name', label="Instrument Name")
         self.add_parameter('p_addr', label="Instrument Address")
 
+    def setup_internal(self):
+        pass
+
+    def readout_internal(self):
+        pass

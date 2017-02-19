@@ -3,6 +3,7 @@ import xml.etree.ElementTree as xmlet
 import base64
 from ast import literal_eval
 import LeekLabber as LL
+from ctypes import *
 from LeekLabber import *
 
 class LLObjectParameter(object):
@@ -20,6 +21,7 @@ class LLObjectParameter(object):
 
     def __init__(self, ref_obj, var_name, label=None, ptype=None, value_list=None, unit='', xvals=None, xlabel=None, xunit=None, onChange=None):
         super(LLObjectParameter, self).__init__()
+        self.binary_share_location = 0
         self.ref_obj = ref_obj
         self.var_name = var_name
         if label is None:
@@ -167,7 +169,88 @@ class LLObjectParameter(object):
                         tmp.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
             self.set_value(tmp)
 
+    def binaryshare_set_location_get_length(self, location):
+        self.binary_share_location = location
+        length = sizeof(c_int) # ptype storage
+        length += len(self.label)+sizeof(c_int) # label storage (length first)
+        if self.ptype<=1: #bool or int
+            length += sizeof(c_int)
+        elif self.ptype==2: #float
+            length += sizeof(c_double)
+        elif self.ptype==3: #string
+            length += sizeof(c_int)
+            length += len(self.get_value())
+        elif self.ptype==4: #numpy
+            nparray = self.get_value()
+            length += (2+(nparray.ndim))*sizeof(c_int) + len(nparray.dtype.str)*sizeof(c_char) + nparray.nbytes
+        elif self.ptype<=6: #llobject, llparam
+            length += sizeof(c_int)
+        elif self.ptype<=8: ##llobject list, llparam list
+            length += sizeof(c_int)*(len(self.get_value())+1) #+1 to store length
+        else:
+            length += 0
+        self.binary_share_length = length
+        return length
 
+    def binaryshare_dump(self, dump_addr):
+        loc = dump_addr+self.binary_share_location
+
+        c_int.from_address(loc).value = self.ptype
+        loc += sizeof(c_int)
+
+
+        lenlabel = len(self.label)
+        c_int.from_address(loc).value = lenlabel
+        loc += sizeof(c_int)
+
+        (c_char*lenlabel).from_address(loc).value = self.label
+        loc += sizeof(c_char)*lenlabel
+
+        if self.ptype<=1: #bool or int
+            c_int.from_address(loc).value = int(self.get_value())
+            loc += sizeof(c_int)
+        elif self.ptype==2: #float
+            c_double.from_address(loc).value = self.get_value()
+            loc += sizeof(c_double)
+        elif self.ptype==3: #string
+            val = self.get_value()
+            lenval = len(val)
+            c_int.from_address(loc).value = lenval
+            loc += sizeof(c_int)
+            (c_char*lenval).from_address(loc).value =  val
+            loc += sizeof(c_char)*lenval
+        elif self.ptype==4: #numpy
+            nparray = self.get_value()
+
+            c_int.from_address(loc).value = nparray.ndim
+            loc += sizeof(c_int)
+
+            (c_int*nparray.ndim).from_address(loc).value =  nparray.ctypes.shape
+            loc += sizeof(c_int)*nparray.ndim
+
+            dtypestr = nparray.dtype.str
+            c_int.from_address(loc).value = len(dtypestr)
+            loc += sizeof(c_int)
+            (c_char*len(dtypestr)).from_address(loc).value = dtypestr
+            loc += sizeof(c_char)*len(dtypestr)
+
+            memmove(byref(c_int.from_address(nparray.ctypes.data)), byref(c_int.from_address(loc)), nparray.nbytes)
+            loc += nparray.nbytes
+        elif self.ptype<=6: #llobject, llparam
+            val = self.get_value()
+            if val is None:
+                c_int.from_address(loc).value = -1
+            else:
+                c_int.from_address(loc).value = self.get_value().binary_share_location
+            loc += sizeof(c_int)
+        elif self.ptype<=8: ##llobject list, llparam list
+            val = self.get_value()
+            for obj in val:
+                if obj is None:
+                    c_int.from_address(loc).value = -1
+                else:
+                    c_int.from_address(loc).value = obj.binary_share_location
+                loc += sizeof(c_int)
 
 class LLObject(object):
 
@@ -275,4 +358,20 @@ class LLObject(object):
         else:
             return self
 
-class LLObjectHusk()
+    def binaryshare_set_location_get_length(self, location):
+        self.binary_share_location = location
+        length = sizeof(c_int) # length storage
+        for param in self.ll_params:
+            length += param.binaryshare_set_location_get_length(location+length)
+        for child in self.ll_children:
+            length += child.binaryshare_set_location_get_length(location+length)
+        self.binary_share_length = length
+        return length
+
+    def binaryshare_dump(self, dump_addr):
+        c_int.from_address(dump_addr+self.binary_share_location).value = self.binary_share_length
+        for param in self.ll_params:
+            param.binaryshare_dump(dump_addr)
+        for child in self.ll_children:
+            child.binaryshare_dump(dump_addr)
+        return

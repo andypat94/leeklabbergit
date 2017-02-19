@@ -7,6 +7,8 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
     def __init__(self, llci):
         super(LLQtSystemTray,self).__init__()
         self.llci = llci
+        llci.enable_system_state_share()
+
         self.setVisible(True)
 
         self.menu = QtWidgets.QMenu()

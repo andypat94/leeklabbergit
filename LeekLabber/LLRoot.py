@@ -28,6 +28,5 @@ class LLRoot(LLObject):
         root.couplings = LLObject(root)
         root.task = LLTaskDelay(root)
         root.pulses = LLObject(root)
-        root.drives = LLObject(root)
         return root
 

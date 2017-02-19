@@ -10,6 +10,7 @@ class LLMicrowaveControlLine(LLObject):
         self.p_drives = []
         self.add_parameter('p_devices', label="Connected Devices", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
         self.add_parameter('p_drives', label="Microwave Drives", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
+        self.pulses = []
 
     def set_parent(self, parent):
         if parent != self.ll_parent:
@@ -29,7 +30,7 @@ class LLMicrowaveControlLine(LLObject):
             dev.add_mwcl_ref(self)
 
     def clear_pulses(self):
-        self.pulses = []
+        del self.pulses[:]
 
     def prepare_pulse(self,pulse):
         self.pulses.append(pulse)
@@ -236,7 +237,7 @@ class LLDrive(LLObject):
         self.p_min_power = 0.0
         self.p_max_power = 0.0
         self.mod_required = False
-        self.pulses = []
+        del self.pulses[:]
 
     def try_pulse(self, pulse, allow_continuous_modulation=False):
         if allow_continuous_modulation:
@@ -356,6 +357,19 @@ class LLPulse(LLObject):
         self.abs_t = np.empty(0)
         self.p_bas_i = np.empty(0)
         self.p_bas_q = np.empty(0)
+
+        self.add_parameter('p_frequency', label="Frequency",unit='Hz')
+        self.add_parameter('p_power', label="Power",unit='dBm')
+        self.add_parameter('p_pulsed', label="Pulsed")
+        self.add_parameter('p_measured', label="Measured")
+        self.add_parameter('p_if_freq', label="IF Frequency", unit='Hz')
+        self.add_parameter('p_start', label="Start Time", unit='s')
+        self.add_parameter('p_length', label="Length", unit='s')
+        self.add_parameter('p_dc_i', label="DC I", unit='V')
+        self.add_parameter('p_dc_q', label="DC Q", unit='V')
+        self.add_parameter('p_basis_phase', label="Basis Phase", unit='pi')
+        self.add_parameter('p_ac_i', label="AC I", unit='V')
+        self.add_parameter('p_ac_q', label="AC Q", unit='V')
 
     def check_drive(self):
         if self.p_planned_drive is None:

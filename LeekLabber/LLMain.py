@@ -13,6 +13,10 @@ from mmap import mmap
 from random import randrange
 
 from timeit import default_timer as timer
+from time import sleep
+
+import gc
+import numpy as np
 
 LL.CONTROLLER = None
 
@@ -36,6 +40,7 @@ def start_leeklabber():
 
 
 def LLControllerThread(interface_creation_q,*args,**kwargs):
+    gc.disable() # cyclic references in this  control process will now stick around forever unless dealt with.. ok
     controller = LLController(interface_creation_q)
     controller.run_event_loop()
 
@@ -116,19 +121,19 @@ class LLController(object):
         gate3["Task Dependences"] = [gate2, ]
 
         # large number of gates test
-        prevGate = gate3
-        for i in range(100):
-            nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
-            nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
-            nextGate["Task Dependences"] = [gate3,]
-            prevGate=nextGate
-
-            nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
-            nextGate["Qubit Device"] = qd_Q1  # qubit 1
-            nextGate["Rotation Axis"] = 'X'  # drive on X
-            nextGate["Rotation Angle"] = 0.5  # pi pulse
-            nextGate["Task Dependences"] = [prevGate, ]
-            prevGate=nextGate
+        # prevGate = gate3
+        # for i in range(100):
+        #     nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+        #     nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
+        #     nextGate["Task Dependences"] = [gate3,]
+        #     prevGate=nextGate
+        #
+        #     nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
+        #     nextGate["Qubit Device"] = qd_Q1  # qubit 1
+        #     nextGate["Rotation Axis"] = 'X'  # drive on X
+        #     nextGate["Rotation Angle"] = 0.5  # pi pulse
+        #     nextGate["Task Dependences"] = [prevGate, ]
+        #     prevGate=nextGate
 
 
         LL.LL_ROOT.task.create_or_update_subtasks_internal()
@@ -137,6 +142,7 @@ class LLController(object):
     def run_event_loop(self):
         first = True
         while True:
+            sleep(0.01)
             # check the interface creation queue to connect to interfaces on other processes as needed
             try:
                 q_val = self.interface_creation_q.get_nowait()
@@ -151,11 +157,12 @@ class LLController(object):
 
             if first:
                 if len(self.connections)>0:
+                    print "hi"
                     self.share_system_state() # won't call this from the loop, will call this after significant state changes
                     first = False
 
     def share_system_state(self):
-        length = sizeof(c_int)
+        length = sizeof(c_double)
         length += LL.LL_ROOT.binaryshare_set_location_get_length(length)
         print("Binarised root is " + str(length)+ " bytes.")
 
@@ -206,8 +213,9 @@ class LLControlConnection(object):
 
         # a mutex is locked. we can safely dump the data into the shared memory
         dump_buf = c_void_p.from_buffer(self.state_mmap[mutexid])
-
-        LL.LL_ROOT.binaryshare_dump(addressof(dump_buf))
+        loc = addressof(dump_buf)
+        c_double.from_address(loc).value = timer()
+        LL.LL_ROOT.binaryshare_dump(loc)
 
         # release the mutex so the other process can access the data
         self.state_mutex[mutexid].release()
@@ -216,7 +224,10 @@ class LLControlConnection(object):
         print("Dumped in " + str(time))
 
 
-class LLControlInterface(object):
+# it's only a qobject so we can use some nice slots
+class LLControlInterface(Qt.QObject):
+    system_state_updated = Qt.pyqtSignal()
+
     cmd_state_sharing = 1
     cmd_state_pipe = 2
 
@@ -224,7 +235,16 @@ class LLControlInterface(object):
         super(LLControlInterface,self).__init__()
         self.interface_creation_q = interface_creation_q
         self.control_pipe =  self.connect_to_controller()
+
         self.state_sharing = False
+        self.state_root = None
+        self.state_instruments = None
+        self.state_devices = None
+        self.state_pulses = None
+        self.state_task = None
+        self.state_exp_setups = None
+        self.state_exp_setup = None
+        self.state_couplings = None
 
     def connect_to_controller(self):
         local_pipe, remote_pipe = multiprocessing.Pipe()
@@ -253,3 +273,229 @@ class LLControlInterface(object):
         local_pipe, remote_pipe = multiprocessing.Pipe()
         self.state_pipe = local_pipe
         self.control_pipe.send((self.cmd_state_pipe, multiprocessing.reduction.reduce_connection(remote_pipe)))
+
+        self.state_prevtime = timer()
+
+    def update_system_state(self):
+        # check for a newer state
+        if not self.state_sharing:
+            return
+        something_loaded = False
+        if self.state_mutex[0].acquire(0):
+            dump_buf = c_void_p.from_buffer(self.state_mmap[0])
+            loc = addressof(dump_buf)
+            if c_double.from_address(loc).value>self.state_prevtime:
+                print("Loading state from buffer A")
+                self.load_system_state(loc)
+                self.state_prevtime = c_double.from_address(loc).value
+                something_loaded = True
+            self.state_mutex[0].release()
+        elif self.state_mutex[1].acquire(0):
+            dump_buf = c_void_p.from_buffer(self.state_mmap[1])
+            loc = addressof(dump_buf)
+            if c_double.from_address(loc).value>self.state_prevtime:
+                print("Loading state from buffer B")
+                self.load_system_state(loc)
+                self.state_prevtime = c_double.from_address(loc).value
+                something_loaded = True
+            self.state_mutex[1].release()
+        if something_loaded:
+            self.state_instruments = self.state_root["Instruments"]
+            self.state_devices = self.state_root["Devices"]
+            self.state_pulses = self.state_root["Pulses"]
+            self.state_task = self.state_root["Task"]
+            self.state_exp_setups = self.state_root["Experiment Setups"]
+            self.state_couplings = self.state_root["Couplings"]
+            if len(self.state_exp_setups.ll_children)>0:
+                self.state_exp_setup = self.state_exp_setups.ll_children[0]
+            self.system_state_updated.emit()
+
+    def load_system_state(self, dump_loc):
+        dump_abs = dump_loc
+        dump_loc += sizeof(c_double) #skip over timer
+        if self.state_root is not None:
+            self.state_root.destroy_hierarchy()
+            self.state_root = None
+        self.state_root = LLObjectInterface()
+        self.state_root.binaryshare_load(dump_loc)
+        self.state_root.binaryshare_loadrefs(dump_loc,dump_abs)
+        #self.state_root.print_hierarchy()
+
+
+class LLObjectInterface(object):
+    def __init__(self):
+        self.ref_id = 0
+        self.ll_params = []
+        self.ll_children = []
+        self.ll_parent = None
+
+    def binaryshare_load(self, loc):
+        start = loc
+        c_int.from_address(loc).value = id(self) # store own location
+        loc += sizeof(c_int)
+        bytelength = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+        self.ref_id = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+        num_children = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+        num_params = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+
+        for i in range(num_children):
+            child = self.add_child()
+            loc = child.binaryshare_load(loc)
+
+        for i in range(num_params):
+            param = self.add_parameter()
+            loc = param.binaryshare_load(loc)
+
+        return start + bytelength
+
+    def binaryshare_loadrefs(self, loc, dump):
+        start = loc
+        loc += sizeof(c_int)
+        bytelength = c_int.from_address(loc).value
+        loc += 4*sizeof(c_int)
+
+        for child in self.ll_children:
+            loc = child.binaryshare_loadrefs(loc,dump)
+
+        for param in self.ll_params:
+            loc = param.binaryshare_loadrefs(loc,dump)
+
+        return start + bytelength
+
+    def add_parameter(self):
+        param = LLParameterInterface()
+        param.obj_ref = self
+        self.ll_params.append(param)
+        return param
+
+    def add_child(self):
+        child = LLObjectInterface()
+        child.ll_parent = self
+        self.ll_children.append(child)
+        return child
+
+    #todo: add a similar function to the real llobject class?
+    def destroy_hierarchy(self):
+        for param in self.ll_params:
+            param.destroy_hierarchy()
+        for child in self.ll_children:
+            child.destroy_hierarchy()
+        del self.ll_children[:]
+        self.ll_parent = None
+
+    def print_hierarchy(self,indent=0):
+        print "x"
+        for param in self.ll_params:
+            print (" "*indent)+"p_"+param.label
+        for child in self.ll_children:
+            child.print_hierarchy(indent+4)
+
+    def get_parameter(self, label):
+        for param in self.ll_params:
+            if param.label == label:
+                return param
+        return None
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return self.get_parameter(item).value
+        else:
+            return None
+
+    def __setitem__(self, item, val):
+        if isinstance(item, str):
+            return self.get_parameter(item).value
+        else:
+            return None
+
+class LLParameterInterface(object):
+    def __init__(self):
+        self.label=""
+        self.value=None
+        self.ptype=0
+        self.obj_ref=None
+
+    def binaryshare_loadrefs(self,loc, dump):
+        start = loc
+        loc += sizeof(c_int)
+        end = start + c_int.from_address(loc).value
+        loc += 2*sizeof(c_int)
+        loc += len(self.label)+sizeof(c_int)
+        if self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER:
+            addr = c_int.from_address(loc).value
+            if addr<0:
+                self.value = None
+            else:
+                ref = c_int.from_address(dump+addr).value
+                self.value = cast(ref, py_object).value
+        elif self.ptype==LLObjectParameter.PTYPE_LLOBJECT_LIST or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER_LIST:
+            num = c_int.from_address(loc).value
+            loc +=sizeof(c_int)
+            self.value = []
+            for i in range(num):
+                addr = c_int.from_address(loc).value
+                if addr < 0:
+                    self.value.append(None)
+                else:
+                    ref = c_int.from_address(dump + addr).value
+                    self.value.append(cast(ref, py_object).value)
+                loc+=sizeof(c_int)
+        return end
+
+    def binaryshare_load(self, loc):
+        start = loc
+
+        c_int.from_address(loc).value = id(self) # store own location
+        loc += sizeof(c_int)
+
+        end = start + c_int.from_address(loc).value
+        loc += sizeof(c_int)
+
+        self.ptype = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+
+        strlen = c_int.from_address(loc).value
+        loc += sizeof(c_int)
+        self.label = (c_char*strlen).from_address(loc).value
+        loc += sizeof(c_char)*strlen
+
+        if self.ptype==LLObjectParameter.PTYPE_BOOL:
+            self.value=c_bool.from_address(loc).value
+        elif self.ptype==LLObjectParameter.PTYPE_INT:
+            self.value=c_int.from_address(loc).value
+        elif self.ptype==LLObjectParameter.PTYPE_FLOAT:
+            self.value=c_double.from_address(loc).value
+        elif self.ptype==LLObjectParameter.PTYPE_STR:
+            strlen=c_int.from_address(loc).value
+            self.value = (c_char*strlen).from_address(loc+sizeof(c_int)).value
+        elif self.ptype==LLObjectParameter.PTYPE_NUMPY:
+            ndim = c_int.from_address(loc).value
+            loc+=sizeof(c_int)
+            shape = []
+            for i in range(ndim):
+                shape.append(c_int.from_address(loc).value)
+                loc+=sizeof(c_int)
+            strlen = c_int.from_address(loc).value
+            loc += sizeof(c_int)
+            dtypestr = (c_char*strlen).from_address(loc).value
+            loc += sizeof(c_char)*strlen
+            nbytes = c_int.from_address(loc).value
+            loc += sizeof(c_int)
+            print("nparray",ndim, shape,dtypestr,nbytes)
+            nparray = np.frombuffer(np.core.multiarray.int_asbuffer(loc, nbytes),dtype=dtypestr)
+            nparray.reshape(shape)
+            self.value = np.copy(nparray)
+
+        return end
+
+
+    def destroy_hierarchy(self):
+        param.obj_ref = None
+        if(self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER):
+            self.value = None
+        elif(self.ptype==LLObjectParameter.PTYPE_LLPARAMETER_LIST or self.ptype==LLObjectParameter.PTYPE_LLOBJECT_LIST):
+            del self.value[:]

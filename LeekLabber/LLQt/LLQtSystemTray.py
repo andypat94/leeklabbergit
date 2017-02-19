@@ -6,8 +6,13 @@ import PyQt5.QtWidgets as QtWidgets
 class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
     def __init__(self, llci):
         super(LLQtSystemTray,self).__init__()
+
         self.llci = llci
         llci.enable_system_state_share()
+
+        self.state_timer = Qt.QTimer()
+        self.state_timer.timeout.connect(llci.update_system_state)
+        self.state_timer.start(100)
 
         self.setVisible(True)
 

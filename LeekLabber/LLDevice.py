@@ -8,7 +8,7 @@ class LLDevice(LLObject):
         self.couplings = []
 
     def clear_coupling_refs(self):
-        self.couplings = []
+        del self.couplings[:]
 
     def add_coupling_ref(self, coupling):
         self.couplings.append(coupling)
@@ -29,7 +29,7 @@ class LLMicrowaveDevice(LLDevice):
         self.mwcls = []
 
     def clear_mwcl_refs(self):
-        self.mwcls = []
+        del self.mwcls[:]
 
     def add_mwcl_ref(self, mwcl):
         self.mwcls.append(mwcl)

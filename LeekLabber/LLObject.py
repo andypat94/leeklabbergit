@@ -145,33 +145,34 @@ class LLObjectParameter(object):
                 parampath = path[1]
                 self.set_value(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
         elif self.ptype in (self.PTYPE_LLOBJECT_LIST,):
-            tmp = []
+            lst = self.get_value()
+            del lst[:]
             if element.text=="":
                 pass
             else:
                 for objpath in literal_eval(element.text):
                     if objpath is None:
-                        tmp.append(None)
+                        lst.append(None)
                     else:
-                        tmp.append(topobj.get_object_from_abs_path(objpath))
-            self.set_value(tmp)
+                        lst.append(topobj.get_object_from_abs_path(objpath))
         elif self.ptype in (self.PTYPE_LLPARAMETER_LIST,):
-            tmp = []
+            lst = self.get_value()
             if element.text=="":
                 pass
             else:
                 for path in literal_eval(element.text):
                     if path is None:
-                        tmp.append(None)
+                        lst.append(None)
                     else:
                         objpath = path[0]
                         parampath = path[1]
-                        tmp.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
-            self.set_value(tmp)
+                        lst.append(topobj.get_object_from_abs_path(objpath).ll_params[parampath])
 
     def binaryshare_set_location_get_length(self, location):
         self.binary_share_location = location
-        length = sizeof(c_int) # ptype storage
+        length = sizeof(c_int) # foreign id storage
+        length += sizeof(c_int) # length storage
+        length += sizeof(c_int) # ptype storage
         length += len(self.label)+sizeof(c_int) # label storage (length first)
         if self.ptype<=1: #bool or int
             length += sizeof(c_int)
@@ -182,7 +183,7 @@ class LLObjectParameter(object):
             length += len(self.get_value())
         elif self.ptype==4: #numpy
             nparray = self.get_value()
-            length += (2+(nparray.ndim))*sizeof(c_int) + len(nparray.dtype.str)*sizeof(c_char) + nparray.nbytes
+            length += (3+(nparray.ndim))*sizeof(c_int) + len(nparray.dtype.str)*sizeof(c_char) + nparray.nbytes
         elif self.ptype<=6: #llobject, llparam
             length += sizeof(c_int)
         elif self.ptype<=8: ##llobject list, llparam list
@@ -193,7 +194,10 @@ class LLObjectParameter(object):
         return length
 
     def binaryshare_dump(self, dump_addr):
-        loc = dump_addr+self.binary_share_location
+        loc = dump_addr+self.binary_share_location+sizeof(c_int) #skip over foreign id storage
+
+        c_int.from_address(loc).value = self.binary_share_length
+        loc += sizeof(c_int)
 
         c_int.from_address(loc).value = self.ptype
         loc += sizeof(c_int)
@@ -225,14 +229,19 @@ class LLObjectParameter(object):
             c_int.from_address(loc).value = nparray.ndim
             loc += sizeof(c_int)
 
-            (c_int*nparray.ndim).from_address(loc).value =  nparray.ctypes.shape
-            loc += sizeof(c_int)*nparray.ndim
+            for i in range(nparray.ndim):
+                c_int.from_address(loc).value =  nparray.ctypes.shape[i]
+                loc += sizeof(c_int)
 
             dtypestr = nparray.dtype.str
             c_int.from_address(loc).value = len(dtypestr)
             loc += sizeof(c_int)
             (c_char*len(dtypestr)).from_address(loc).value = dtypestr
             loc += sizeof(c_char)*len(dtypestr)
+
+
+            c_int.from_address(loc).value =  nparray.nbytes
+            loc += sizeof(c_int)
 
             memmove(byref(c_int.from_address(nparray.ctypes.data)), byref(c_int.from_address(loc)), nparray.nbytes)
             loc += nparray.nbytes
@@ -245,6 +254,8 @@ class LLObjectParameter(object):
             loc += sizeof(c_int)
         elif self.ptype<=8: ##llobject list, llparam list
             val = self.get_value()
+            c_int.from_address(loc).value =  len(val)
+            loc+=sizeof(c_int)
             for obj in val:
                 if obj is None:
                     c_int.from_address(loc).value = -1
@@ -261,10 +272,17 @@ class LLObject(object):
         self.ll_parent = None
         self.set_parent(parent)
 
+        # hacky way of preventing an LLObject ever being removed from memory until remove() is called.  Ensures some safety when sending references across processes.
+        # only works if cyclic garbage collection is disabled
+        pyinternal_refcount = c_int.from_address(id(self))
+        self.self_ref = self
+
     def remove(self):
         self.set_parent(None)
         for child in self.ll_children:
             child.remove()
+        del self.ll_children[:]
+        self.self_ref = None
 
     def set_parent(self, parent):
         if self.ll_parent==parent:
@@ -360,18 +378,30 @@ class LLObject(object):
 
     def binaryshare_set_location_get_length(self, location):
         self.binary_share_location = location
-        length = sizeof(c_int) # length storage
-        for param in self.ll_params:
-            length += param.binaryshare_set_location_get_length(location+length)
+        length = sizeof(c_int) # foreign id storage
+        length += sizeof(c_int) # length storage
+        length += sizeof(c_int) # id storage
+        length += sizeof(c_int) # child num storage
+        length += sizeof(c_int) # param storage
         for child in self.ll_children:
             length += child.binaryshare_set_location_get_length(location+length)
+        for param in self.ll_params:
+            length += param.binaryshare_set_location_get_length(location+length)
         self.binary_share_length = length
         return length
 
     def binaryshare_dump(self, dump_addr):
-        c_int.from_address(dump_addr+self.binary_share_location).value = self.binary_share_length
-        for param in self.ll_params:
-            param.binaryshare_dump(dump_addr)
+        loc = dump_addr+self.binary_share_location+sizeof(c_int) #skip over foreign id storage
+        c_int.from_address(loc).value = self.binary_share_length
+        loc += sizeof(c_int)
+        c_int.from_address(loc).value = id(self)
+        loc += sizeof(c_int)
+        c_int.from_address(loc).value = len(self.ll_children)
+        loc += sizeof(c_int)
+        c_int.from_address(loc).value = len(self.ll_params)
+        loc += sizeof(c_int)
         for child in self.ll_children:
             child.binaryshare_dump(dump_addr)
+        for param in self.ll_params:
+            param.binaryshare_dump(dump_addr)
         return

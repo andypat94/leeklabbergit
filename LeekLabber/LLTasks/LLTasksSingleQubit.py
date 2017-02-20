@@ -136,6 +136,7 @@ class LLTaskSingleQPulseSquare(LLTask):
         self.add_parameter('p_phase', label="Pulse Phase", unit='pi')
 
         self.pulse1 = self.add_pulse()
+        self.pulse2 = self.add_pulse()
         self.pulse3 = self.add_pulse()
 
     def prepare_experiment(self):
@@ -143,16 +144,17 @@ class LLTaskSingleQPulseSquare(LLTask):
         # Ask experimental setup to prepare to send a microwave drive at this frequency, power etc.
         #self.prepare_microwave_drive(self.p_qubit,self.p_qubit["Frequency"], power=20.0, pulsed=True, measured=False)
         #self.prepare_pulse(self.pulse2, self.p_qubit,self.p_qubit["Frequency"]-300.0e6, power=20.0, pulsed=True, measured=False)
+        self.prepare_pulse(self.pulse2, self.p_qubit, self.p_qubit["Frequency"], -25.0, False, False)
         self.prepare_pulse(self.pulse3, self.p_qubit, 10.0e9, power=-60.0, pulsed=True, measured=True)
 
     def submit_experiment(self):
         # do a pulse
-        t = self.get_timebase(self.pulse1, 100.0e-9)
-        i = np.zeros(len(t))
-        q = np.zeros(len(t))
-        i.fill(np.cos(self.p_phase*np.pi))
-        q.fill(np.sin(self.p_phase*np.pi))
-        self.submit_pulse(self.pulse1, i, q, self.p_qubit.s_phi_offset)
+        #t = self.get_timebase(self.pulse1, 100.0e-9)
+        #i = np.zeros(len(t))
+        #q = np.zeros(len(t))
+        #i.fill(np.cos(self.p_phase*np.pi))
+        #q.fill(np.sin(self.p_phase*np.pi))
+        #self.submit_pulse(self.pulse1, i, q, self.p_qubit.s_phi_offset)
 
         t = self.get_timebase(self.pulse3, 200.0e-9)
         i = np.zeros(len(t))

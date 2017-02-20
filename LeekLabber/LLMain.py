@@ -55,9 +55,24 @@ class LLController(object):
 
     def add_test_system(self):
         # Create Instruments
+        i_SGS_QUBIT2 = LLInstruments.LLInstrumentRSSGS()
+        i_SGS_QUBIT2['Instrument Name'] = "Qubit Generator 2"
+        i_SGS_QUBIT2['Instrument Address'] = "192.168.1.21"
+        i_SGS_QUBIT_B2 = LLInstruments.LLInstrumentRSSGS()
+        i_SGS_QUBIT_B2['Instrument Name'] = "Qubit Generator B 2"
+        i_SGS_QUBIT_B2['Instrument Address'] = "192.168.1.23"
+        i_SGS_RF2 = LLInstruments.LLInstrumentRSSGS()
+        i_SGS_RF2['Instrument Name'] = "RF Generator 2"
+        i_SGS_RF2['Instrument Address'] = "192.168.1.25"
+        i_SGS_LO2 = LLInstruments.LLInstrumentRSSGS()
+        i_SGS_LO2['Instrument Name'] = "LO Generator 2"
+        i_SGS_LO2['Instrument Address'] = "192.168.1.27"
         i_SGS_QUBIT = LLInstruments.LLInstrumentRSSGS()
         i_SGS_QUBIT['Instrument Name'] = "Qubit Generator"
         i_SGS_QUBIT['Instrument Address'] = "192.168.1.20"
+        i_SGS_QUBIT_B = LLInstruments.LLInstrumentRSSGS()
+        i_SGS_QUBIT_B['Instrument Name'] = "Qubit Generator B"
+        i_SGS_QUBIT_B['Instrument Address'] = "192.168.1.22"
         i_SGS_RF = LLInstruments.LLInstrumentRSSGS()
         i_SGS_RF['Instrument Name'] = "RF Generator"
         i_SGS_RF['Instrument Address'] = "192.168.1.24"
@@ -70,9 +85,17 @@ class LLController(object):
 
         # Create Quantum Devices
         qd_Q1 = LLDevices.LLDeviceSimpleQubit()
+        qd_Q1["Device Name"] = "Qubit 1"
         qd_Q1["Frequency"] = 6.0e9
         qd_R1 = LLDevices.LLDeviceSimpleResonator()
+        qd_R1["Device Name"] = "Resonator 1"
         qd_R1["Frequency"] = 9.0e9
+        qd_Q2 = LLDevices.LLDeviceSimpleQubit()
+        qd_Q2["Device Name"] = "Qubit 2"
+        qd_Q2["Frequency"] = 7.0e9
+        qd_R2 = LLDevices.LLDeviceSimpleResonator()
+        qd_R2["Device Name"] = "Resonator 2"
+        qd_R2["Frequency"] = 10.0e9
 
         # Assign couplings between devices
         LLDeviceCoupling(qd_Q1, qd_R1, 10.0e6, 'Chi')
@@ -95,6 +118,10 @@ class LLController(object):
         drive["ADC Data"] = p_adc_data
         drive["ADC I Channel"] = 0
         drive["ADC Q Channel"] = 1
+        # Third drive with no pulsing ability
+        drive = LLDrive(mwcl)
+        drive["Drive Generator"] = i_SGS_QUBIT_B
+        drive["DAC Data"] = None
         # Second drive (for qubit) from 2gs first board
         drive = LLDrive(mwcl)
         drive["Drive Generator"] = i_SGS_QUBIT
@@ -103,6 +130,33 @@ class LLController(object):
         drive["DAC Q Channel"] = 1
         # This line is for measuring the resonator and controlling the qubit
         mwcl["Connected Devices"] += [qd_Q1, qd_R1]
+
+        mwcl = LLMicrowaveControlLine(exp_setup)
+        p_1gs_dac_data = i_FPGABOX.get_parameter("1GS DAC Data")
+        p_2gs_dac_data = i_FPGABOX.get_parameter("2GS DAC Data")
+        p_adc_data = i_FPGABOX.get_parameter("ADC Data")
+        # First drive (for resonator) from 1gs first board
+        drive = LLDrive(mwcl)
+        drive["Drive Generator"] = i_SGS_RF2
+        drive["DAC Data"] = p_1gs_dac_data
+        drive["DAC I Channel"] = 2
+        drive["DAC Q Channel"] = 3
+        drive["Readout Generator"] = i_SGS_LO2
+        drive["ADC Data"] = p_adc_data
+        drive["ADC I Channel"] = 2
+        drive["ADC Q Channel"] = 3
+        # Third drive with no pulsing ability
+        drive = LLDrive(mwcl)
+        drive["Drive Generator"] = i_SGS_QUBIT_B2
+        drive["DAC Data"] = None
+        # Second drive (for qubit) from 2gs first board
+        drive = LLDrive(mwcl)
+        drive["Drive Generator"] = i_SGS_QUBIT2
+        drive["DAC Data"] = p_2gs_dac_data
+        drive["DAC I Channel"] = 2
+        drive["DAC Q Channel"] = 3
+        # This line is for measuring the resonator and controlling the qubit
+        mwcl["Connected Devices"] += [qd_Q2, qd_R2]
 
         # Prepare an experiment with a single qubit rotation
         gate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
@@ -115,7 +169,7 @@ class LLController(object):
         gate2["Task Dependences"] = [gate, ]
 
         gate3 = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
-        gate3["Qubit Device"] = qd_Q1  # qubit 1
+        gate3["Qubit Device"] = qd_Q2  # qubit 1
         gate3["Rotation Axis"] = 'X'  # drive on X
         gate3["Rotation Angle"] = 0.5  # pi pulse
         gate3["Task Dependences"] = [gate2, ]
@@ -157,7 +211,6 @@ class LLController(object):
 
             if first:
                 if len(self.connections)>0:
-                    print "hi"
                     self.share_system_state() # won't call this from the loop, will call this after significant state changes
                     first = False
 
@@ -485,7 +538,6 @@ class LLParameterInterface(object):
             loc += sizeof(c_char)*strlen
             nbytes = c_int.from_address(loc).value
             loc += sizeof(c_int)
-            print("nparray",ndim, shape,dtypestr,nbytes)
             nparray = np.frombuffer(np.core.multiarray.int_asbuffer(loc, nbytes),dtype=dtypestr)
             nparray.reshape(shape)
             self.value = np.copy(nparray)

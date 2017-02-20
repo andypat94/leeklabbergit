@@ -5,6 +5,10 @@ class LLDevice(LLObject):
     def __init__(self):
         super(LLDevice, self).__init__(LL.LL_ROOT.devices)
 
+        self.p_name = "Device Name"
+
+        self.add_parameter("p_name",label="Device Name")
+
         self.couplings = []
 
     def clear_coupling_refs(self):

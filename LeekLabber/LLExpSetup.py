@@ -159,6 +159,12 @@ class LLDrive(LLObject):
         self.plan_power = 0.
         self.mod_required = False
 
+        self.add_parameter('planned',label="Planned")
+        self.add_parameter('plan_output',label="Plan Output")
+        self.add_parameter('plan_modulated',label="Plan Modulated")
+        self.add_parameter('plan_lo_frequency',label="Plan Frequency",unit='Hz')
+        self.add_parameter('plan_power',label="Plan Power",unit='dBm')
+
         self.pulses = []
 
     def execute(self, experiment_length):
@@ -397,7 +403,8 @@ class LLPulse(LLObject):
     def get_timebase(self, start, length):
         self.p_start = start
         self.p_length = length
-        self.p_planned_drive.get_timebase(self, start, length)
+        if self.p_planned_drive is not None:
+            self.p_planned_drive.get_timebase(self, start, length)
         return self.t_vals
 
     def submit_pulse(self, dc_i, dc_q, basis_phase):

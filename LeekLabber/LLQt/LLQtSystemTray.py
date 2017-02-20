@@ -2,10 +2,18 @@ import LeekLabber as LL
 import PyQt5.QtCore as Qt
 import PyQt5.QtGui as QtGui
 import PyQt5.QtWidgets as QtWidgets
+import os
 
 class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
     def __init__(self, llci):
         super(LLQtSystemTray,self).__init__()
+
+        dirname = os.path.dirname(os.path.realpath(__file__))
+
+        print dirname
+
+        self.phi_icon =QtGui.QIcon(dirname+"\\physics-48.png")
+        self.setIcon(self.phi_icon)
 
         self.llci = llci
         llci.enable_system_state_share()

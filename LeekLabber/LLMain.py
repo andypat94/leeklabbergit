@@ -18,9 +18,15 @@ from time import sleep
 import gc
 import numpy as np
 
+import sys
+import traceback
+
 LL.CONTROLLER = None
 
 def start_leeklabber():
+    myappid = u'leeklab.leeklabber.leeklabber.0'  # arbitrary string
+    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
     Qt.pyqtRemoveInputHook() # we're handling threading/eventloops ourselves
     app = QtWidgets.QApplication([]) # create a Qt application
 
@@ -40,9 +46,15 @@ def start_leeklabber():
 
 
 def LLControllerThread(interface_creation_q,*args,**kwargs):
+
     gc.disable() # cyclic references in this  control process will now stick around forever unless dealt with.. ok
     controller = LLController(interface_creation_q)
-    controller.run_event_loop()
+    try:
+        controller.run_event_loop()
+    except:
+        print "Error in Control Thread"
+        traceback.print_exc()
+        #raise
 
 class LLController(object):
     def __init__(self, interface_creation_q):
@@ -194,14 +206,14 @@ class LLController(object):
         LL.LL_ROOT.task.execute()  # do it!
 
     def run_event_loop(self):
-        first = True
+        self.share_state_now = True
         while True:
             sleep(0.01)
             # check the interface creation queue to connect to interfaces on other processes as needed
             try:
                 q_val = self.interface_creation_q.get_nowait()
                 pipe = multiprocessing.reduction.rebuild_pipe_connection(*q_val[1])
-                self.connections.append(LLControlConnection(pipe))
+                self.connections.append(LLControlConnection(self,pipe))
             except Empty:
                 pass
 
@@ -209,10 +221,10 @@ class LLController(object):
             for conn in self.connections:
                 conn.check_pipe()
 
-            if first:
+            if self.share_state_now:
                 if len(self.connections)>0:
                     self.share_system_state() # won't call this from the loop, will call this after significant state changes
-                    first = False
+                    self.share_state_now = False
 
     def share_system_state(self):
         length = sizeof(c_double)
@@ -224,7 +236,8 @@ class LLController(object):
 
 
 class LLControlConnection(object):
-    def __init__(self, interface_pipe):
+    def __init__(self, controller, interface_pipe):
+        self.controller = controller
         self.interface_pipe = interface_pipe
         self.state_share_bufA = None
         self.state_share_bufB = None
@@ -239,9 +252,45 @@ class LLControlConnection(object):
                     self.enable_system_state_share(sharing_enabled=p_val[1], mmap_name=p_val[2], mmap_size=p_val[3], mutex_name=p_val[4])
                 elif p_val[0]==LLControlInterface.cmd_state_pipe:
                     self.state_pipe = multiprocessing.reduction.rebuild_pipe_connection(*p_val[1][1])
+                elif p_val[0]==LLControlInterface.cmd_set_parameter:
+                    target_object = cast(p_val[1],py_object).value
+                    target_param = target_object.get_parameter(p_val[2])
+                    if p_val[3] is None:
+                        val = None
+                    else:
+                        if target_param.ptype <= LLObjectParameter.PTYPE_STR:
+                            val = p_val[3]
+                        elif target_param.ptype == LLObjectParameter.PTYPE_NUMPY:
+                            val = p_val[3]  # todo: i think this probably doesn't work
+                        elif target_param.ptype == LLObjectParameter.PTYPE_LLOBJECT:  # object or param
+                            val = cast(p_val[3],py_object).value
+                        elif target_param.ptype == LLObjectParameter.PTYPE_LLPARAMETER:  # object or param
+                            val = cast(p_val[3][0],py_object).value.get_parameter(p_val[3][1])
+                        elif target_param.ptype == LLObjectParameter.PTYPE_LLOBJECT_LIST:  # object or param lists
+                            val = [cast(item, py_object).value for item in p_val[3]]
+                        elif target_param.ptype == LLObjectParameter.PTYPE_LLPARAMETER_LIST:  # object or param lists
+                            val = [cast(item[0], py_object).value.get_parameter(item[1]) for item in p_val[3]]
+                        else:
+                            val = None
+                    target_param.set_value(val)
+                    self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_create_llobject:
+                    classname = p_val[1]
+                    id = p_val[2]
+                    if id is None:
+                        parent_obj = None
+                    else:
+                        parent_obj = cast(id ,py_object).value
+                    klass = getattr(LL, classname)
+                    klass(parent_obj)
+                    self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_remove_llobject:
+                    obj = cast(p_val[1],py_object).value
+                    obj.remove()
+                    self.controller.share_state_now = True
 
         except IOError:
-            raise Exception("ControllerInterface connection closed")
+            pass
 
     def enable_system_state_share(self, sharing_enabled, mmap_name, mmap_size, mutex_name):
         self.state_sharing = sharing_enabled
@@ -283,6 +332,9 @@ class LLControlInterface(Qt.QObject):
 
     cmd_state_sharing = 1
     cmd_state_pipe = 2
+    cmd_set_parameter = 3
+    cmd_create_llobject = 4
+    cmd_remove_llobject = 5
 
     def __init__(self, interface_creation_q):
         super(LLControlInterface,self).__init__()
@@ -323,9 +375,9 @@ class LLControlInterface(Qt.QObject):
 
         self.control_pipe.send((self.cmd_state_sharing, True, self.state_mmap_name, self.state_mmap_size, self.state_mutex_name))
 
-        local_pipe, remote_pipe = multiprocessing.Pipe()
-        self.state_pipe = local_pipe
-        self.control_pipe.send((self.cmd_state_pipe, multiprocessing.reduction.reduce_connection(remote_pipe)))
+        # local_pipe, remote_pipe = multiprocessing.Pipe()
+        # self.state_pipe = local_pipe
+        # self.control_pipe.send((self.cmd_state_pipe, multiprocessing.reduction.reduce_connection(remote_pipe)))
 
         self.state_prevtime = timer()
 
@@ -353,8 +405,9 @@ class LLControlInterface(Qt.QObject):
                 something_loaded = True
             self.state_mutex[1].release()
         if something_loaded:
-            self.state_instruments = self.state_root["Instruments"]
-            self.state_devices = self.state_root["Devices"]
+            self.state_instruments = self.state_root["Instruments"].ll_children
+            self.state_devices = self.state_root["Devices"].ll_children
+            #print("devices:", len(self.state_devices))
             self.state_pulses = self.state_root["Pulses"]
             self.state_task = self.state_root["Task"]
             self.state_exp_setups = self.state_root["Experiment Setups"]
@@ -367,13 +420,45 @@ class LLControlInterface(Qt.QObject):
         dump_abs = dump_loc
         dump_loc += sizeof(c_double) #skip over timer
         if self.state_root is not None:
-            self.state_root.destroy_hierarchy()
+            #self.state_root.destroy_hierarchy()
             self.state_root = None
         self.state_root = LLObjectInterface()
         self.state_root.binaryshare_load(dump_loc)
         self.state_root.binaryshare_loadrefs(dump_loc,dump_abs)
         #self.state_root.print_hierarchy()
 
+    def set_parameter(self, param, value):
+        if value is None:
+            val = None
+        else:
+            if param.ptype <= LLObjectParameter.PTYPE_STR:
+                val = value
+            elif param.ptype == LLObjectParameter.PTYPE_NUMPY:
+                val = value #todo: i think this probably doesn't work
+            elif param.ptype == LLObjectParameter.PTYPE_LLOBJECT: # object or param
+                val = value.ref_id
+            elif param.ptype == LLObjectParameter.PTYPE_LLPARAMETER: # object or param
+                val = (value.obj_ref.ref_id, value.label)
+            elif param.ptype == LLObjectParameter.PTYPE_LLOBJECT_LIST: # object or param lists
+                val = [item.ref_id for item in value]
+            elif param.ptype == LLObjectParameter.PTYPE_LLPARAMETER_LIST: # object or param lists
+                val = [(item.obj_ref.ref_id, item.label) for item in value]
+            else:
+                val = None
+
+        self.control_pipe.send((self.cmd_set_parameter, param.obj_ref.ref_id, param.label, val))
+
+    def create_llobject(self, classname, parentobj=None):
+        if parentobj is None:
+            id = None
+        else:
+            id = parentobj.ref_id
+        self.control_pipe.send((self.cmd_create_llobject,classname,id))
+
+    def remove_llobject(self, obj):
+        if obj is None:
+            return
+        self.control_pipe.send((self.cmd_remove_llobject,obj.ref_id))
 
 class LLObjectInterface(object):
     def __init__(self):
@@ -381,6 +466,7 @@ class LLObjectInterface(object):
         self.ll_params = []
         self.ll_children = []
         self.ll_parent = None
+        self.classname = ""
 
     def binaryshare_load(self, loc):
         start = loc
@@ -388,6 +474,12 @@ class LLObjectInterface(object):
         loc += sizeof(c_int)
         bytelength = c_int.from_address(loc).value
         loc += sizeof(c_int)
+
+        classnamelen =  c_int.from_address(loc).value
+        loc += sizeof(c_int)
+        self.classname = (c_char*classnamelen).from_address(loc).value
+        loc += classnamelen
+
         self.ref_id = c_int.from_address(loc).value
         loc += sizeof(c_int)
         num_children = c_int.from_address(loc).value
@@ -409,7 +501,11 @@ class LLObjectInterface(object):
         start = loc
         loc += sizeof(c_int)
         bytelength = c_int.from_address(loc).value
-        loc += 4*sizeof(c_int)
+        loc += sizeof(c_int)
+        classnamelen = c_int.from_address(loc).value
+        loc += sizeof(c_int) + classnamelen
+
+        loc += 3*sizeof(c_int)
 
         for child in self.ll_children:
             loc = child.binaryshare_loadrefs(loc,dump)
@@ -539,8 +635,8 @@ class LLParameterInterface(object):
             nbytes = c_int.from_address(loc).value
             loc += sizeof(c_int)
             nparray = np.frombuffer(np.core.multiarray.int_asbuffer(loc, nbytes),dtype=dtypestr)
-            nparray.reshape(shape)
             self.value = np.copy(nparray)
+            self.value.shape = shape
 
         return end
 

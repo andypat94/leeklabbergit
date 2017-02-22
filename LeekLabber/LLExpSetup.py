@@ -111,9 +111,6 @@ class LLDrive(LLObject):
     def __init__(self, mwcl=None):
         super(LLDrive, self).__init__(mwcl)
 
-        if mwcl is not None:
-            mwcl["Microwave Drives"] += [self,]
-
         self.p_pulsed_capable = False
         self.p_readout_capable = False
 
@@ -166,6 +163,19 @@ class LLDrive(LLObject):
         self.add_parameter('plan_power',label="Plan Power",unit='dBm')
 
         self.pulses = []
+
+    def set_parent(self, parent):
+        if parent != self.ll_parent:
+            if parent is None:
+                pass
+            else:
+                parent["Microwave Drives"] += [self,]
+            if self.ll_parent is None:
+                pass
+            else:
+                self.ll_parent["Microwave Drives"] = [mwcl for mwcl in self.ll_parent["Microwave Drives"] if mwcl!= self]
+        retval = super(LLDrive, self).set_parent(parent)
+        return retval
 
     def execute(self, experiment_length):
         if self.plan_modulated:

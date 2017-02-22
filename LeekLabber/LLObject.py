@@ -274,8 +274,8 @@ class LLObject(object):
 
         # hacky way of preventing an LLObject ever being removed from memory until remove() is called.  Ensures some safety when sending references across processes.
         # only works if cyclic garbage collection is disabled
-        pyinternal_refcount = c_int.from_address(id(self))
-        self.self_ref = self
+        # pyinternal_refcount = c_int.from_address(id(self))
+        self.self_ref = self # this increments the internal reference count
 
     def remove(self):
         self.set_parent(None)
@@ -380,6 +380,7 @@ class LLObject(object):
         self.binary_share_location = location
         length = sizeof(c_int) # foreign id storage
         length += sizeof(c_int) # length storage
+        length += sizeof(c_int)+len(self.__class__.__name__) # store class type
         length += sizeof(c_int) # id storage
         length += sizeof(c_int) # child num storage
         length += sizeof(c_int) # param storage
@@ -392,16 +393,37 @@ class LLObject(object):
 
     def binaryshare_dump(self, dump_addr):
         loc = dump_addr+self.binary_share_location+sizeof(c_int) #skip over foreign id storage
+
+        # store length
         c_int.from_address(loc).value = self.binary_share_length
         loc += sizeof(c_int)
+
+        # store classname
+        string = self.__class__.__name__
+        strlen = len(string)
+        c_int.from_address(loc).value = strlen
+        loc += sizeof(c_int)
+        (c_char*strlen).from_address(loc).value = string
+        loc += strlen
+
+        # store id
         c_int.from_address(loc).value = id(self)
         loc += sizeof(c_int)
+
+        # store children length
         c_int.from_address(loc).value = len(self.ll_children)
         loc += sizeof(c_int)
+
+        #store param length
         c_int.from_address(loc).value = len(self.ll_params)
         loc += sizeof(c_int)
+
+        # store children
         for child in self.ll_children:
             child.binaryshare_dump(dump_addr)
+
+        # store parameters
         for param in self.ll_params:
             param.binaryshare_dump(dump_addr)
+
         return

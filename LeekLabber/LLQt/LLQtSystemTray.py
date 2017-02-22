@@ -9,9 +9,6 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         super(LLQtSystemTray,self).__init__()
 
         dirname = os.path.dirname(os.path.realpath(__file__))
-
-        print dirname
-
         self.phi_icon =QtGui.QIcon(dirname+"\\physics-48.png")
         self.setIcon(self.phi_icon)
 
@@ -33,7 +30,7 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.setContextMenu(self.menu)
 
         self.expSetupWidget = LL.LLQtExpSetupWidget(llci)
-
+        self.expSetupWidget.setWindowIcon(self.phi_icon)
         self.expSetupWidget.show()
 
     def menuExpSetup(self):

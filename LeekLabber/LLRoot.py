@@ -1,8 +1,6 @@
-from LeekLabber import *
-from LLTask import *
-from LLObject import *
+import  LeekLabber as LL
 
-class LLRoot(LLObject):
+class LLRoot(LL.LLObject):
     def __init__(self):
         super(LLRoot, self).__init__(None)
         self.devices = None
@@ -12,21 +10,21 @@ class LLRoot(LLObject):
         self.task = None
         self.pulses = None
 
-        self.add_parameter("devices",label="Devices",ptype=LLObjectParameter.PTYPE_LLOBJECT)
-        self.add_parameter("instruments",label="Instruments",ptype=LLObjectParameter.PTYPE_LLOBJECT)
-        self.add_parameter("expsetups",label="Experiment Setups",ptype=LLObjectParameter.PTYPE_LLOBJECT)
-        self.add_parameter("couplings",label="Couplings",ptype=LLObjectParameter.PTYPE_LLOBJECT)
-        self.add_parameter("task",label="Task",ptype=LLObjectParameter.PTYPE_LLOBJECT)
-        self.add_parameter("pulses",label="Pulses",ptype=LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("devices",label="Devices",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("instruments",label="Instruments",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("expsetups",label="Experiment Setups",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("couplings",label="Couplings",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("task",label="Task",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
+        self.add_parameter("pulses",label="Pulses",ptype=LL.LLObjectParameter.PTYPE_LLOBJECT)
 
     @staticmethod
     def from_blank():
         root = LLRoot()
-        root.devices = LLObject(root)
-        root.instruments = LLObject(root)
-        root.expsetups = LLObject(root)
-        root.couplings = LLObject(root)
-        root.task = LLTaskDelay(root)
-        root.pulses = LLObject(root)
+        root.devices = LL.LLObject(root)
+        root.instruments = LL.LLObject(root)
+        root.expsetups = LL.LLObject(root)
+        root.couplings = LL.LLObject(root)
+        root.task = LL.LLTaskDelay(root)
+        root.pulses = LL.LLObject(root)
         return root
 

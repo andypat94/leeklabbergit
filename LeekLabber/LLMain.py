@@ -187,23 +187,23 @@ class LLController(object):
         gate3["Task Dependences"] = [gate2, ]
 
         # large number of gates test
-        # prevGate = gate3
-        # for i in range(100):
-        #     nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
-        #     nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
-        #     nextGate["Task Dependences"] = [gate3,]
-        #     prevGate=nextGate
-        #
-        #     nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
-        #     nextGate["Qubit Device"] = qd_Q1  # qubit 1
-        #     nextGate["Rotation Axis"] = 'X'  # drive on X
-        #     nextGate["Rotation Angle"] = 0.5  # pi pulse
-        #     nextGate["Task Dependences"] = [prevGate, ]
-        #     prevGate=nextGate
+        prevGate = gate3
+        for i in range(100):
 
+            nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+            nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
+            nextGate["Task Dependences"] = [gate3,]
+            prevGate=nextGate
 
-        LL.LL_ROOT.task.create_or_update_subtasks_internal()
-        LL.LL_ROOT.task.execute()  # do it!
+            nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
+            nextGate["Qubit Device"] = qd_Q1  # qubit 1
+            nextGate["Rotation Axis"] = 'X'  # drive on X
+            nextGate["Rotation Angle"] = 0.5  # pi pulse
+            nextGate["Task Dependences"] = [prevGate, gate2]
+            prevGate=nextGate
+
+        #LL.LL_ROOT.task.create_or_update_subtasks_internal()
+        #LL.LL_ROOT.task.execute()  # do it!
 
     def run_event_loop(self):
         self.share_state_now = True
@@ -288,9 +288,47 @@ class LLControlConnection(object):
                     obj = cast(p_val[1],py_object).value
                     obj.remove()
                     self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_create_lltask:
+                    classname=p_val[1]
+                    parent_task=cast(p_val[2], py_object).value
+                    if p_val[3] is None:
+                        after_task = None
+                    else:
+                        after_task = cast(p_val[3], py_object).value
+                    insert_operation = p_val[4]
+                    # create the new task inside the parent task given
+                    klass = getattr(LL,classname)
+                    newtask = klass(parent_task)
+                    # set dependence of this task
+                    if after_task is not None:
+                        newtask["Task Dependences"] += [after_task,]
+                        # move other tasks behind this task if we're doing an insert.
+                        if insert_operation:
+                            for sibling_task in parent_task.ll_children:
+                                if sibling_task != newtask:
+                                    dependences = sibling_task["Task Dependences"]
+                                    for i in range(len(dependences)):
+                                        if dependences[i]==after_task:
+                                            dependences[i]=newtask
+                    self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_remove_lltask:
+                    task = cast(p_val[1], py_object).value
+                    parent_task = task.ll_parent
+                    deps = task["Task Dependences"]
+                    task.remove()
+                    sibling_tasks = parent_task.ll_children
+                    for sibling in sibling_tasks:
+                        siblingdeps = sibling["Task Dependences"]
+                        if task in siblingdeps:
+                            siblingdeps.remove(task)
+                            if p_val[2]:
+                                for d in deps:
+                                    if d not in siblingdeps:
+                                        siblingdeps.append(d)
+                    self.controller.share_state_now = True
 
         except IOError:
-            pass
+            QtWidgets.qApp.quit()
 
     def enable_system_state_share(self, sharing_enabled, mmap_name, mmap_size, mutex_name):
         self.state_sharing = sharing_enabled
@@ -335,6 +373,8 @@ class LLControlInterface(Qt.QObject):
     cmd_set_parameter = 3
     cmd_create_llobject = 4
     cmd_remove_llobject = 5
+    cmd_create_lltask = 6
+    cmd_remove_lltask = 7
 
     def __init__(self, interface_creation_q):
         super(LLControlInterface,self).__init__()
@@ -360,7 +400,7 @@ class LLControlInterface(Qt.QObject):
             pass
         return local_pipe
 
-    def enable_system_state_share(self, bufsize=128*2**20): # default 128 MB buffer
+    def enable_system_state_share(self, bufsize=256*2**20): # default 128 MB buffer
         if self.state_sharing:
             return
         self.state_sharing = True
@@ -459,6 +499,20 @@ class LLControlInterface(Qt.QObject):
         if obj is None:
             return
         self.control_pipe.send((self.cmd_remove_llobject,obj.ref_id))
+
+    def create_lltask(self, classname, parent_task, after_task=None, insert_operation=False):
+        if parent_task is None:
+            return
+        if after_task is None:
+            after_id = None
+        else:
+            after_id = after_task.ref_id
+        self.control_pipe.send((self.cmd_create_lltask, classname, parent_task.ref_id, after_id, insert_operation))
+
+    def remove_lltask(self, task, move_dependents=False):
+        if task is None:
+            return
+        self.control_pipe.send((self.cmd_remove_lltask, task.ref_id, move_dependents))
 
 class LLObjectInterface(object):
     def __init__(self):
@@ -569,11 +623,7 @@ class LLParameterInterface(object):
         self.obj_ref=None
 
     def binaryshare_loadrefs(self,loc, dump):
-        start = loc
-        loc += sizeof(c_int)
-        end = start + c_int.from_address(loc).value
-        loc += 2*sizeof(c_int)
-        loc += len(self.label)+sizeof(c_int)
+        loc = self.data_start_loc
         if self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER:
             addr = c_int.from_address(loc).value
             if addr<0:
@@ -593,7 +643,7 @@ class LLParameterInterface(object):
                     ref = c_int.from_address(dump + addr).value
                     self.value.append(cast(ref, py_object).value)
                 loc+=sizeof(c_int)
-        return end
+        return self.data_end_loc
 
     def binaryshare_load(self, loc):
         start = loc
@@ -607,10 +657,22 @@ class LLParameterInterface(object):
         self.ptype = c_int.from_address(loc).value
         loc += sizeof(c_int)
 
-        strlen = c_int.from_address(loc).value
-        loc += sizeof(c_int)
-        self.label = (c_char*strlen).from_address(loc).value
-        loc += sizeof(c_char)*strlen
+        def load_string(loc):
+            strlen =  c_int.from_address(loc).value
+            loc+=sizeof(c_int)
+            return (c_char*strlen).from_address(loc).value, loc+strlen
+
+        self.label, loc = load_string(loc)
+        self.unit, loc = load_string(loc)
+        self.value_dict_str, loc = load_string(loc)
+        self.value_dict = eval(self.value_dict_str)
+
+        self.read_only = c_bool.from_address(loc).value
+        loc+= sizeof(c_bool)
+        self.viewable = c_bool.from_address(loc).value
+        loc+= sizeof(c_bool)
+
+        self.data_start_loc = loc
 
         if self.ptype==LLObjectParameter.PTYPE_BOOL:
             self.value=c_bool.from_address(loc).value
@@ -619,30 +681,34 @@ class LLParameterInterface(object):
         elif self.ptype==LLObjectParameter.PTYPE_FLOAT:
             self.value=c_double.from_address(loc).value
         elif self.ptype==LLObjectParameter.PTYPE_STR:
-            strlen=c_int.from_address(loc).value
-            self.value = (c_char*strlen).from_address(loc+sizeof(c_int)).value
+            self.value, loc = load_string(loc)
         elif self.ptype==LLObjectParameter.PTYPE_NUMPY:
-            ndim = c_int.from_address(loc).value
-            loc+=sizeof(c_int)
-            shape = []
-            for i in range(ndim):
-                shape.append(c_int.from_address(loc).value)
+            def load_numpy(loc):
+                ndim = c_int.from_address(loc).value
                 loc+=sizeof(c_int)
-            strlen = c_int.from_address(loc).value
-            loc += sizeof(c_int)
-            dtypestr = (c_char*strlen).from_address(loc).value
-            loc += sizeof(c_char)*strlen
-            nbytes = c_int.from_address(loc).value
-            loc += sizeof(c_int)
-            nparray = np.frombuffer(np.core.multiarray.int_asbuffer(loc, nbytes),dtype=dtypestr)
-            self.value = np.copy(nparray)
-            self.value.shape = shape
+                shape = []
+                for i in range(ndim):
+                    shape.append(c_int.from_address(loc).value)
+                    loc+=sizeof(c_int)
+                dtypestr, loc = load_string(loc)
+                nbytes = c_int.from_address(loc).value
+                loc += sizeof(c_int)
+                nparray = np.frombuffer(np.core.multiarray.int_asbuffer(loc, nbytes),dtype=dtypestr)
+                value = np.copy(nparray)
+                value.shape = shape
 
+                return value, loc+nbytes
+            self.value, loc = load_numpy(loc)
+            self.xlabel, loc = load_string(loc)
+            if self.xlabel != "":
+                self.xunit, loc = load_string(loc)
+                self.xvals, loc = load_numpy(loc)
+        self.data_end_loc = end
         return end
 
 
     def destroy_hierarchy(self):
-        param.obj_ref = None
+        self.obj_ref = None
         if(self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER):
             self.value = None
         elif(self.ptype==LLObjectParameter.PTYPE_LLPARAMETER_LIST or self.ptype==LLObjectParameter.PTYPE_LLOBJECT_LIST):

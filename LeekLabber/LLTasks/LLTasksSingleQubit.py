@@ -1,5 +1,5 @@
 from LeekLabber import *
-
+from LLSimpleTasks import *
 
 class LLTaskSingleQRotation(LLTask):
     def __init__(self, parent=None):
@@ -73,6 +73,9 @@ class LLTaskSingleQPulseGen(LLTask):
 
         self.p_subtask = None
         self.add_parameter('p_subtask', label="subtask", ptype=LLObjectParameter.PTYPE_LLOBJECT)
+        self.p_subtask2 = None
+        self.add_parameter('p_subtask2', label="subtask2", ptype=LLObjectParameter.PTYPE_LLOBJECT)
+
 
     def create_or_update_subtasks(self):
 
@@ -89,6 +92,9 @@ class LLTaskSingleQPulseGen(LLTask):
             self.p_subtask["Pulse Amplitude"] = self.p_rate
             self.p_subtask["Pulse Length"] = 100.0e-9 #should calculate
         self.p_subtask["Pulse Phase"] = self.p_drive_phi
+
+        self.p_subtask2 = self.ensure_subtask(self.p_subtask2, LLTaskDelay)
+        self.p_subtask2["Task Dependences"] = [self.p_subtask,]
 
     def prepare_experiment(self):
         pass

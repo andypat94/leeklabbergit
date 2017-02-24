@@ -25,16 +25,33 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.setContextMenu(self.menu)
         self.actExpSetup = self.menu.addAction("Experiment Setup")
         self.actExpSetup.triggered.connect(self.menuExpSetup)
+        self.actTaskSetup = self.menu.addAction("Task Setup")
+        self.actTaskSetup.triggered.connect(self.menuTaskSetup)
         self.actQuit = self.menu.addAction("Quit")
         self.actQuit.triggered.connect(self.menuQuit)
         self.setContextMenu(self.menu)
 
         self.expSetupWidget = LL.LLQtExpSetupWidget(llci)
         self.expSetupWidget.setWindowIcon(self.phi_icon)
-        self.expSetupWidget.show()
+        #self.expSetupWidget.show()
+
+        self.taskSetupWidget = LL.LLQtTaskSetupWidget(llci)
+        self.taskSetupWidget.setWindowIcon(self.phi_icon)
+        self.taskSetupWidget.show()
 
     def menuExpSetup(self):
         self.expSetupWidget.show()
+        if(self.expSetupWidget.windowState()==Qt.Qt.WindowMinimized):
+            self.expSetupWidget.setWindowState(Qt.Qt.WindowNoState)
+        self.expSetupWidget.activateWindow()
+        self.expSetupWidget.raise_()
+
+    def menuTaskSetup(self):
+        self.taskSetupWidget.show()
+        if(self.taskSetupWidget.windowState()==Qt.Qt.WindowMinimized):
+            self.taskSetupWidget.setWindowState(Qt.Qt.WindowNoState)
+        self.taskSetupWidget.activateWindow()
+        self.taskSetupWidget.raise_()
 
     def menuQuit(self):
         QtWidgets.QApplication.quit()

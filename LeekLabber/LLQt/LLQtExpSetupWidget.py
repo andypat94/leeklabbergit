@@ -3,8 +3,6 @@ import PyQt5.QtCore as Qt
 import PyQt5.QtGui as QtGui
 import PyQt5.QtWidgets as QtWidgets
 
-import traceback
-
 class LLQtExpSetupWidget(QtWidgets.QWidget):
     def __init__(self, llci):
         super(LLQtExpSetupWidget,self).__init__()
@@ -44,7 +42,8 @@ class LLQtExpSetupWidget(QtWidgets.QWidget):
         self.checkboxViewAll.setChecked(self.viewall)
 
     def hideEvent(self,event): #todo: remove this.
-        QtWidgets.QApplication.quit()
+        pass
+        #QtWidgets.QApplication.quit()
 
     def button_add_line_clicked(self):
         self.llci.create_llobject('LLMicrowaveControlLine', self.llci.state_exp_setup)

@@ -43,12 +43,12 @@ class LLTaskMicrowavePulseGaussian(LLTask):
 
         self.p_qubit = None
         self.p_length= 0.
-        self.p_amplitude= 0.
+        self.p_power= 0.
         self.p_phase= 0.
 
         self.add_parameter('p_qubit', label="Microwave Device", ptype=LLObjectParameter.PTYPE_LLOBJECT, select_from = LL.LL_ROOT.devices)
         self.add_parameter('p_length', label="Pulse Length", unit='s')
-        self.add_parameter('p_amplitude', label="Pulse Amplitude", unit='V')
+        self.add_parameter('p_power', label="Pulse Power", unit='dBm')
         self.add_parameter('p_phase', label="Pulse Phase", unit='pi')
 
     def create_or_update_subtasks(self):

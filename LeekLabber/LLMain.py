@@ -65,9 +65,8 @@ class LLController(object):
         super(LLController, self).__init__()
         self.interface_creation_q = interface_creation_q
         self.connections = []
-        LL.LL_ROOT = LL.LLRoot.from_blank()  # create a blank global root instance.
 
-        self.add_test_system()
+        LL.LL_ROOT = LL.LLRoot.from_blank()  # create a blank global root instance.
 
     def add_test_system(self):
         # Create Instruments
@@ -208,8 +207,7 @@ class LLController(object):
         #     nextGate["Task Dependences"] = [prevGate, gate2]
         #     prevGate=nextGate
 
-        LL.LL_ROOT.task.create_or_update_subtasks_internal()
-        #LL.LL_ROOT.task.execute()  # do it!
+        pass
 
     def run_event_loop(self):
         self.share_state_now = True
@@ -265,6 +263,13 @@ class LLControlConnection(object):
                     tree = xmlet.ElementTree(file=".\\shutdown-state.xml")
                     element = tree.getroot()
                     LLObject.from_xml_element(element) # also sets the new root
+                    LL.LL_ROOT.expsetups.ll_children[0].update_coupling_refs()
+                    LL.LL_ROOT.task.create_or_update_subtasks_internal()
+                    self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_load_test_state:
+                    LL.LL_ROOT.remove()
+                    LL.LL_ROOT = LL.LLRoot.from_blank()
+                    self.controller.add_test_system()
                     LL.LL_ROOT.expsetups.ll_children[0].update_coupling_refs()
                     LL.LL_ROOT.task.create_or_update_subtasks_internal()
                     self.controller.share_state_now = True
@@ -399,6 +404,7 @@ class LLControlConnection(object):
 class LLControlInterface(Qt.QObject):
     system_state_updated = Qt.pyqtSignal()
 
+    cmd_load_test_state = -2
     cmd_load_shutdown_state = -1
     cmd_save_and_quit = 0
     cmd_state_sharing = 1
@@ -556,6 +562,9 @@ class LLControlInterface(Qt.QObject):
 
     def load_shutdown_state(self):
         self.control_pipe.send((self.cmd_load_shutdown_state, ))
+
+    def load_test_state(self):
+        self.control_pipe.send((self.cmd_load_test_state, ))
 
 class LLObjectInterface(object):
     def __init__(self):

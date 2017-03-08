@@ -29,6 +29,9 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.setContextMenu(self.menu)
         self.actLoad = self.menu.addAction("Load")
         self.actLoad.triggered.connect(self.menuLoad)
+        self.actReset = self.menu.addAction("Test Reset")
+        self.actReset.triggered.connect(self.menuReset)
+        self.menu.addSeparator()
         self.actInstruments = self.menu.addAction("Instruments")
         self.actInstruments.triggered.connect(self.menuInstruments)
         self.actDevices = self.menu.addAction("Devices")
@@ -37,6 +40,7 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.actExpSetup.triggered.connect(self.menuExpSetup)
         self.actTaskSetup = self.menu.addAction("Task Setup")
         self.actTaskSetup.triggered.connect(self.menuTaskSetup)
+        self.menu.addSeparator()
         self.actQuit = self.menu.addAction("Quit")
         self.actQuit.triggered.connect(self.menuQuit)
         self.setContextMenu(self.menu)
@@ -82,3 +86,6 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
 
     def menuLoad(self):
         self.llci.load_shutdown_state()
+
+    def menuReset(self):
+        self.llci.load_test_state()

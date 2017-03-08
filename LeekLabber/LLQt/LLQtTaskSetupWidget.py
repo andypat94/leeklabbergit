@@ -5,27 +5,52 @@ import PyQt5.QtWidgets as QtWidgets
 
 
 class LLQtTaskSetupWidget(QtWidgets.QWidget):
+
     def __init__(self, llci):
         super(LLQtTaskSetupWidget,self).__init__()
 
+        self.setWindowTitle("Task Setup")
+
         self.llci = llci
 
-        # self.setMinimumSize(300,100)
+        size = QtWidgets.QDesktopWidget().availableGeometry(self).size()
+
+        self.resize(Qt.QSize(size.width()*0.8, size.height()*0.25))
         self.setWindowTitle("Task Setup")
 
         #main window central widget
-        self.main_layout = QtWidgets.QHBoxLayout()
+        self.main_layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.main_layout)
 
+        self.splitter = QtWidgets.QSplitter(Qt.Qt.Horizontal)
+        self.main_layout.addWidget(self.splitter)
+
         self.task_container = LLQtTaskContainerWidget(llci, True)
-        self.main_layout.addWidget(self.task_container)
+        self.splitter.addWidget(self.task_container)
+
+        self.param_editor = LL.LLQtParameterEditor(llci)
+        self.splitter.addWidget(self.param_editor)
+
+        self.splitter.setStretchFactor(0,1)
+        self.splitter.setStretchFactor(1,0)
+
+        self.but_execute = QtWidgets.QPushButton("Plan and Execute")
+        self.but_execute.clicked.connect(self.execute_clicked)
+        self.main_layout.addWidget(self.but_execute)
+
+        self.task_container.task_selection_changed.connect(self.param_editor.set_object)
 
         self.llci.system_state_updated.connect(self.llci_update)
 
     def llci_update(self):
         self.task_container.update(self.llci.state_task)
 
+    def execute_clicked(self):
+        self.llci.plan_and_execute()
+
 class LLQtTaskContainerWidget(QtWidgets.QWidget):
+    task_selection_changed = Qt.pyqtSignal([object])
+
     def __init__(self, llci, scroller=False):
         super(LLQtTaskContainerWidget, self).__init__()
         self.llci = llci
@@ -72,6 +97,10 @@ class LLQtTaskContainerWidget(QtWidgets.QWidget):
 
         #self.setStyleSheet(nice_groupbox_style)
 
+    def contextMenuEvent(self, event):
+        #todo: put something here
+        pass
+
     def create_layout(self):
         self.main_layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.main_layout)
@@ -116,6 +145,9 @@ class LLQtTaskContainerWidget(QtWidgets.QWidget):
         # draw parent connections
         self.show_dependences(qtask)
 
+        self.task_selection_changed.emit(qtask.task)
+
+
     def qtask_rightclicked(self, qtask):
 
         self.rightclicked_qtask = qtask
@@ -156,14 +188,6 @@ class LLQtTaskContainerWidget(QtWidgets.QWidget):
     def add_to_dependences(self):
         param = self.selected_qtask.task.get_parameter("Task Dependences")
         self.llci.set_parameter(param, param.value+[self.rightclicked_qtask.task, ])
-
-
-    def contextMenuEvent(self, event):
-        #todo: implement
-        # menu = QtWidgets.QMenu(self)
-        # menu.addMenu(self.create_task_inside_menu)
-        # menu.exec_(QtGui.QCursor.pos())
-        pass
 
     def qtask_doubleclicked(self, qtask):
         self.qtask_clicked(qtask)
@@ -269,6 +293,7 @@ class LLQtTaskContainerWidget(QtWidgets.QWidget):
             for qtask in placement_list:
                 qtask.placed = True
                 timestep.addQTask(qtask)
+            timestep.addStretch(0)
             self.timestep_layout.addWidget(timestep)
 
             # update the list of remaining tasks to place
@@ -276,7 +301,7 @@ class LLQtTaskContainerWidget(QtWidgets.QWidget):
             t = t + 1
 
         self.qtasks = qtasks
-
+        self.timestep_layout.addStretch(0)
         self.restore_selection(current_path)
 
 
@@ -292,6 +317,9 @@ class LLQtTaskTimestepWidget(QtWidgets.QWidget):
 
     def addQTask(self, qtask):
         self.task_layout.addWidget(qtask)
+
+    def addStretch(self, stretch=0):
+        self.task_layout.addStretch(stretch)
 
 class LLQtTaskWidget(QtWidgets.QGroupBox):
     def __init__(self, llci, task, container=None):
@@ -352,6 +380,7 @@ class LLQtTaskWidget(QtWidgets.QGroupBox):
             return
         self.subtask_container = LLQtTaskContainerWidget(self.llci)
         self.subtask_container.update(self.task)
+        self.subtask_container.task_selection_changed.connect(self.container.task_selection_changed.emit)
         self.vbox.addWidget(self.subtask_container,1)
 
     def mousePressEvent(self, event):

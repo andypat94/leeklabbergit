@@ -67,6 +67,8 @@ class LLObject(object):
         constructor = getattr(LL, element.tag)
         #print ('Creating',element.tag,'depth',i)
         obj = constructor()
+        if isinstance(obj, LL.LLRoot):
+            LL.LL_ROOT = obj
         obj.xml_element = element
         for children_element in [children_element for children_element in element if children_element.tag=='children']:
             for child_element in children_element:
@@ -84,7 +86,7 @@ class LLObject(object):
         else:
             for params_element in [params_element for params_element in self.xml_element if params_element.tag == 'params']:
                 for param_element in params_element:
-                    self.get_parameter(param_element.tag).from_xml_element(param_element,topobj)
+                    self.get_parameter(param_element.get('name')).from_xml_element(param_element,topobj)
 
 
     def create_xml_element(self, parent_element=None, top_obj=None):
@@ -114,6 +116,8 @@ class LLObject(object):
             return self.ll_parent.get_abs_path(topobj) + (self.ll_parent.ll_children.index(self),)
 
     def get_object_from_abs_path(self, path):
+        if path is None:
+            return None
         if(len(path)>0):
             return self.ll_children[path[0]].get_object_from_abs_path(path[1:])
         else:
@@ -184,7 +188,7 @@ class LLObjectParameter(object):
     PTYPE_UNKNOWN_LIST = 254
     PTYPE_UNKNOWN = 255
 
-    def __init__(self, ref_obj, var_name, label=None, ptype=None, value_list=None, unit='', xvals=None, xlabel=None, xunit=None, onChange=None, read_only=False, viewable=True, value_dict=None,ptype_filter=None):
+    def __init__(self, ref_obj, var_name, label=None, ptype=None, unit='', xvals=None, xlabel=None, xunit=None, onChange=None, read_only=False, viewable=True, value_dict=None, ptype_filter=None, select_from=None):
         super(LLObjectParameter, self).__init__()
         self.binary_share_location = 0
         self.ref_obj = ref_obj
@@ -226,7 +230,9 @@ class LLObjectParameter(object):
         self.unit = unit
         self.value_dict = value_dict
         self.value_dict_str = str(value_dict)
+        self.select_from = select_from
         self.ptype_filter = ptype_filter
+        self.ptype_filter_str = str(ptype_filter)
         self.read_only = read_only
         self.viewable = viewable
 
@@ -254,9 +260,11 @@ class LLObjectParameter(object):
 
     def create_xml_element(self, parent_element=None, topobj=None):
         if parent_element is None:
-            element = xmlet.Element(self.label)
+            element = xmlet.Element('P')
         else:
-            element = xmlet.SubElement(parent_element, self.label)
+            element = xmlet.SubElement(parent_element, 'P')
+
+        element.set('name', self.label)
 
         val = self.get_value()
 
@@ -294,20 +302,28 @@ class LLObjectParameter(object):
         if self.ptype in (self.PTYPE_BOOL,self.PTYPE_INT,self.PTYPE_FLOAT):
             self.set_value(literal_eval(element.text))
         elif self.ptype in (self.PTYPE_STR,):
-            self.set_value(element.text)
+            if element.text is None:
+                val = ""
+            else:
+                val = element.text
+            self.set_value(val)
         elif self.ptype in (self.PTYPE_NUMPY,):
             shape = literal_eval(element.get('shape'))
             dtype = element.get('dtype')
-            array = np.frombuffer(base64.decodestring(element.text),dtype=dtype)
-            array.reshape(shape)
+            if element.text is None:
+                array = np.empty(shape=shape, dtype=dtype)
+            else:
+                array = np.frombuffer(base64.decodestring(element.text),dtype=dtype)
+                array = array.reshape(shape)
+                array.setflags(write=1)
             self.set_value(array)
         elif self.ptype in (self.PTYPE_LLOBJECT,):
-            if element.text=="":
+            if element.text=="" or element.text is None:
                 self.set_value(None)
             else:
                 self.set_value(topobj.get_object_from_abs_path(literal_eval(element.text)))
         elif self.ptype in (self.PTYPE_LLPARAMETER,):
-            if element.text=="":
+            if element.text=="" or element.text is None:
                 self.set_value(None)
             else:
                 path = literal_eval(element.text)
@@ -317,7 +333,7 @@ class LLObjectParameter(object):
         elif self.ptype in (self.PTYPE_LLOBJECT_LIST,):
             lst = self.get_value()
             del lst[:]
-            if element.text=="":
+            if element.text=="" or element.text is None:
                 pass
             else:
                 for objpath in literal_eval(element.text):
@@ -327,7 +343,7 @@ class LLObjectParameter(object):
                         lst.append(topobj.get_object_from_abs_path(objpath))
         elif self.ptype in (self.PTYPE_LLPARAMETER_LIST,):
             lst = self.get_value()
-            if element.text=="":
+            if element.text=="" or element.text is None:
                 pass
             else:
                 for path in literal_eval(element.text):
@@ -364,8 +380,10 @@ class LLObjectParameter(object):
                 nparray = self.get_xvals()
                 length += (3 + (nparray.ndim)) * sizeof(c_int) + len(nparray.dtype.str) * sizeof(c_char) + nparray.nbytes
         elif self.ptype<=6: #llobject, llparam
+            length += 2*sizeof(c_int) + len(self.ptype_filter_str) # store select_from obj, ptype filter
             length += sizeof(c_int)
         elif self.ptype<=8: ##llobject list, llparam list
+            length += 2*sizeof(c_int) + len(self.ptype_filter_str) # store select_from obj, ptype filter
             length += sizeof(c_int)*(len(self.get_value())+1) #+1 to store length
         else:
             length += 0
@@ -397,6 +415,13 @@ class LLObjectParameter(object):
         c_bool.from_address(loc).value = self.viewable
         loc += sizeof(c_bool)
 
+        def write_object(loc, val):
+            if val is None:
+                c_int.from_address(loc).value = -1
+            else:
+                c_int.from_address(loc).value = val.binary_share_location
+            return loc + sizeof(c_int)
+
         if self.ptype<=1: #bool or int
             c_int.from_address(loc).value = int(self.get_value())
             loc += sizeof(c_int)
@@ -421,11 +446,10 @@ class LLObjectParameter(object):
                 c_int.from_address(loc).value = nparray.nbytes
                 loc += sizeof(c_int)
 
-                memmove(byref(c_int.from_address(nparray.ctypes.data)), byref(c_int.from_address(loc)), nparray.nbytes)
+                memmove(loc, nparray.ctypes.data, nparray.nbytes)
                 loc += nparray.nbytes
 
                 return loc
-
             loc = write_numpy(loc, self.get_value())
             if self.xvals is not None:
                 loc = write_string(loc, self.xlabel)
@@ -435,20 +459,16 @@ class LLObjectParameter(object):
                 loc = write_string(loc,"")
 
         elif self.ptype<=6: #llobject, llparam
-            val = self.get_value()
-            if val is None:
-                c_int.from_address(loc).value = -1
-            else:
-                c_int.from_address(loc).value = self.get_value().binary_share_location
-            loc += sizeof(c_int)
+            loc = write_object(loc, self.select_from) # store select_from
+            loc = write_string(loc, self.ptype_filter_str) # store ptype filter string
+            loc = write_object(loc, self.get_value()) # store object
+
         elif self.ptype<=8: ##llobject list, llparam list
+            loc = write_object(loc, self.select_from) # store select_from
+            loc = write_string(loc, self.ptype_filter_str) # store ptype filter string
             val = self.get_value()
             c_int.from_address(loc).value =  len(val)
             loc+=sizeof(c_int)
             for obj in val:
-                if obj is None:
-                    c_int.from_address(loc).value = -1
-                else:
-                    c_int.from_address(loc).value = obj.binary_share_location
-                loc += sizeof(c_int)
+                loc = write_object(loc, obj)
 

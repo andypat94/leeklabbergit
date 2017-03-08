@@ -23,6 +23,21 @@ class LLDevice(LLObject):
     def set_control_line(self):
         pass
 
+    def get_couplings(self, type):
+        print len(self.couplings)
+        return [coupling for coupling in self.couplings if coupling.p_coupling_type==type]
+
+    def get_coupling(self, type):
+        couplings = self.get_couplings(type)
+        if len(couplings)>0:
+            coupling = couplings[0]
+            if coupling.p_devA == self:
+                return (coupling.p_devB, coupling)
+            else:
+                return (coupling.p_devA, coupling)
+        else:
+            return (None, None)
+
 
 class LLMicrowaveDevice(LLDevice):
     def __init__(self):
@@ -48,8 +63,11 @@ class LLMicrowaveDevice(LLDevice):
     def prepare_pulse(self, pulse):
         self.mwcl.prepare_pulse(pulse)
 
+    def clear_state_vars(self):
+        pass
+
 class LLDeviceCoupling(LLObject):
-    def __init__(self, objA=None, objB=None, value=0.0, coupling_type='g',unit='Hz'):
+    def __init__(self, objA=None, objB=None, value=0.0, coupling_type='2Chi',unit='Hz'):
         super(LLDeviceCoupling, self).__init__(LL.LL_ROOT.couplings)
 
         self.p_devA = objA
@@ -57,10 +75,10 @@ class LLDeviceCoupling(LLObject):
         self.p_value = value
         self.p_coupling_type = coupling_type
 
-        self.add_parameter('p_devA', label="Device A", ptype=LLObjectParameter.PTYPE_LLOBJECT) #, onChange=self.couplings_changed)
-        self.add_parameter('p_devB', label="Device B", ptype=LLObjectParameter.PTYPE_LLOBJECT) #, onChange=self.couplings_changed)
+        self.add_parameter('p_devA', label="Device A", ptype=LLObjectParameter.PTYPE_LLOBJECT, select_from=LL.LL_ROOT.devices) #, onChange=self.couplings_changed)
+        self.add_parameter('p_devB', label="Device B", ptype=LLObjectParameter.PTYPE_LLOBJECT, select_from=LL.LL_ROOT.devices) #, onChange=self.couplings_changed)
         self.add_parameter('p_value', label="Coupling Strength", unit=unit)
-        self.add_parameter('p_coupling_type', label="Coupling Type")
+        self.add_parameter('p_coupling_type', label="Coupling Type", value_dict={'2Chi':'2Chi','J':'J'})
 
     def add_coupling_refs(self):
         if (self.p_devA is not None) and (self.p_devB is not None):

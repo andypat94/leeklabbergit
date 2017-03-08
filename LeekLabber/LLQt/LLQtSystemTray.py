@@ -13,16 +13,26 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.setIcon(self.phi_icon)
 
         self.llci = llci
+
+
         llci.enable_system_state_share()
 
         self.state_timer = Qt.QTimer()
         self.state_timer.timeout.connect(llci.update_system_state)
         self.state_timer.start(100)
 
+        llci.load_shutdown_state()
+
         self.setVisible(True)
 
         self.menu = QtWidgets.QMenu()
         self.setContextMenu(self.menu)
+        self.actLoad = self.menu.addAction("Load")
+        self.actLoad.triggered.connect(self.menuLoad)
+        self.actInstruments = self.menu.addAction("Instruments")
+        self.actInstruments.triggered.connect(self.menuInstruments)
+        self.actDevices = self.menu.addAction("Devices")
+        self.actDevices.triggered.connect(self.menuDevices)
         self.actExpSetup = self.menu.addAction("Experiment Setup")
         self.actExpSetup.triggered.connect(self.menuExpSetup)
         self.actTaskSetup = self.menu.addAction("Task Setup")
@@ -33,25 +43,42 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
 
         self.expSetupWidget = LL.LLQtExpSetupWidget(llci)
         self.expSetupWidget.setWindowIcon(self.phi_icon)
-        #self.expSetupWidget.show()
+        self.expSetupWidget.show()
 
         self.taskSetupWidget = LL.LLQtTaskSetupWidget(llci)
         self.taskSetupWidget.setWindowIcon(self.phi_icon)
         self.taskSetupWidget.show()
 
+        self.instrumentsWidget = LL.LLQtInstrumentsWidget(llci)
+        self.instrumentsWidget.setWindowIcon(self.phi_icon)
+        self.instrumentsWidget.show()
+
+        self.devicesWidget = LL.LLQtDevicesWidget(llci)
+        self.devicesWidget.setWindowIcon(self.phi_icon)
+        self.devicesWidget.show()
+
+    def show_window(self, widget):
+        widget.show()
+        if (widget.windowState() == Qt.Qt.WindowMinimized):
+            widget.setWindowState(Qt.Qt.WindowNoState)
+        widget.activateWindow()
+        widget.raise_()
+
     def menuExpSetup(self):
-        self.expSetupWidget.show()
-        if(self.expSetupWidget.windowState()==Qt.Qt.WindowMinimized):
-            self.expSetupWidget.setWindowState(Qt.Qt.WindowNoState)
-        self.expSetupWidget.activateWindow()
-        self.expSetupWidget.raise_()
+        self.show_window(self.expSetupWidget)
 
     def menuTaskSetup(self):
-        self.taskSetupWidget.show()
-        if(self.taskSetupWidget.windowState()==Qt.Qt.WindowMinimized):
-            self.taskSetupWidget.setWindowState(Qt.Qt.WindowNoState)
-        self.taskSetupWidget.activateWindow()
-        self.taskSetupWidget.raise_()
+        self.show_window(self.taskSetupWidget)
+
+    def menuInstruments(self):
+        self.show_window(self.instrumentsWidget)
+
+    def menuDevices(self):
+        self.show_window(self.devicesWidget)
 
     def menuQuit(self):
+        self.llci.save_and_quit()
         QtWidgets.QApplication.quit()
+
+    def menuLoad(self):
+        self.llci.load_shutdown_state()

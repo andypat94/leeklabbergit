@@ -2,3 +2,8 @@ from LLQtSystemTray import *
 from LLQtExpSetupWidget import *
 from LLQtSelectionDialog import *
 from LLQtTaskSetupWidget import *
+from LLQtParameterEditor import *
+from LLQtInstrumentsWidget import *
+from LLQtDevicesWidget import *
+from LLQtInstrumentsWidget import *
+from LLQtPlots import *

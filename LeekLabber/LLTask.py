@@ -9,8 +9,8 @@ class LLTask(LLObject):
         self.p_dependences = []
         self.p_pulses = []
 
-        self.add_parameter('p_dependences', label="Task Dependences", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
-        self.add_parameter('p_pulses', label="Pulses", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
+        self.add_parameter('p_dependences', label="Task Dependences", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST, viewable=False, read_only=True)
+        self.add_parameter('p_pulses', label="Pulses", ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST, viewable=False, read_only=True)
 
     def add_pulse(self):
         pulse = LLPulse()

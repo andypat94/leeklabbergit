@@ -20,6 +20,10 @@ import numpy as np
 
 import sys
 import traceback
+import math
+import re
+
+import xml.etree.ElementTree as xmlet
 
 LL.CONTROLLER = None
 
@@ -97,20 +101,22 @@ class LLController(object):
 
         # Create Quantum Devices
         qd_Q1 = LLDevices.LLDeviceSimpleQubit()
-        qd_Q1["Device Name"] = "Qubit 1"
+        qd_Q1["Device Name"] = "Coaxmon A"
         qd_Q1["Frequency"] = 6.0e9
         qd_R1 = LLDevices.LLDeviceSimpleResonator()
-        qd_R1["Device Name"] = "Resonator 1"
+        qd_R1["Device Name"] = "Resonator A"
         qd_R1["Frequency"] = 9.0e9
         qd_Q2 = LLDevices.LLDeviceSimpleQubit()
-        qd_Q2["Device Name"] = "Qubit 2"
+        qd_Q2["Device Name"] = "Coaxmon B"
         qd_Q2["Frequency"] = 7.0e9
         qd_R2 = LLDevices.LLDeviceSimpleResonator()
-        qd_R2["Device Name"] = "Resonator 2"
+        qd_R2["Device Name"] = "Resonator B"
         qd_R2["Frequency"] = 10.0e9
 
         # Assign couplings between devices
-        LLDeviceCoupling(qd_Q1, qd_R1, 10.0e6, 'Chi')
+        LLDeviceCoupling(qd_Q1, qd_R1, 10.0e6, '2Chi')
+        LLDeviceCoupling(qd_Q2, qd_R2, 20.0e6, '2Chi')
+        LLDeviceCoupling(qd_Q2, qd_R1, 1.0e6, '2Chi')
 
         # Create an Experimental Setup
         exp_setup = LLExpSetup()
@@ -181,33 +187,34 @@ class LLController(object):
         gate2["Task Dependences"] = [gate, ]
 
         gate3 = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
-        gate3["Qubit Device"] = qd_Q2  # qubit 1
+        gate3["Qubit Device"] = qd_Q1  # qubit 1
         gate3["Rotation Axis"] = 'X'  # drive on X
         gate3["Rotation Angle"] = 0.5  # pi pulse
         gate3["Task Dependences"] = [gate2, ]
 
         # large number of gates test
-        prevGate = gate3
-        for i in range(100):
+        # prevGate = gate3
+        # for i in range(4):
+        #
+        #     nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+        #     nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
+        #     nextGate["Task Dependences"] = [gate3,]
+        #     prevGate=nextGate
+        #
+        #     nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
+        #     nextGate["Qubit Device"] = qd_Q1  # qubit 1
+        #     nextGate["Rotation Axis"] = 'X'  # drive on X
+        #     nextGate["Rotation Angle"] = 0.5  # pi pulse
+        #     nextGate["Task Dependences"] = [prevGate, gate2]
+        #     prevGate=nextGate
 
-            nextGate = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
-            nextGate["Delay Time"] = np.random.randint(1000)*1.0e-9
-            nextGate["Task Dependences"] = [gate3,]
-            prevGate=nextGate
-
-            nextGate = LLTasks.LLTaskSingleQRotation(LL.LL_ROOT.task)
-            nextGate["Qubit Device"] = qd_Q1  # qubit 1
-            nextGate["Rotation Axis"] = 'X'  # drive on X
-            nextGate["Rotation Angle"] = 0.5  # pi pulse
-            nextGate["Task Dependences"] = [prevGate, gate2]
-            prevGate=nextGate
-
-        #LL.LL_ROOT.task.create_or_update_subtasks_internal()
+        LL.LL_ROOT.task.create_or_update_subtasks_internal()
         #LL.LL_ROOT.task.execute()  # do it!
 
     def run_event_loop(self):
         self.share_state_now = True
-        while True:
+        self.quit = False
+        while not self.quit:
             sleep(0.01)
             # check the interface creation queue to connect to interfaces on other processes as needed
             try:
@@ -229,7 +236,7 @@ class LLController(object):
     def share_system_state(self):
         length = sizeof(c_double)
         length += LL.LL_ROOT.binaryshare_set_location_get_length(length)
-        print("Binarised root is " + str(length)+ " bytes.")
+        print "Dumping root " + str(length/1024.)+ " kB."
 
         for conn in self.connections:
             conn.share_system_state()
@@ -248,7 +255,20 @@ class LLControlConnection(object):
 
             while self.interface_pipe.poll():
                 p_val = self.interface_pipe.recv()
-                if p_val[0]==LLControlInterface.cmd_state_sharing:
+                if p_val[0]==LLControlInterface.cmd_save_and_quit:
+                    element = LL.LL_ROOT.create_xml_element()
+                    tree = xmlet.ElementTree(element=element)
+                    tree.write(".\\shutdown-state.xml")
+                    self.controller.quit = True
+                elif p_val[0]==LLControlInterface.cmd_load_shutdown_state:
+                    LL.LL_ROOT.remove() #todo: check this destroys old root object? (and all other objects?)
+                    tree = xmlet.ElementTree(file=".\\shutdown-state.xml")
+                    element = tree.getroot()
+                    LLObject.from_xml_element(element) # also sets the new root
+                    LL.LL_ROOT.expsetups.ll_children[0].update_coupling_refs()
+                    LL.LL_ROOT.task.create_or_update_subtasks_internal()
+                    self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_state_sharing:
                     self.enable_system_state_share(sharing_enabled=p_val[1], mmap_name=p_val[2], mmap_size=p_val[3], mutex_name=p_val[4])
                 elif p_val[0]==LLControlInterface.cmd_state_pipe:
                     self.state_pipe = multiprocessing.reduction.rebuild_pipe_connection(*p_val[1][1])
@@ -273,6 +293,10 @@ class LLControlConnection(object):
                         else:
                             val = None
                     target_param.set_value(val)
+                    if isinstance(target_object, LLTask):
+                        #todo: should  this really be here? updates the coupling list
+                        LL.LL_ROOT.expsetups.ll_children[0].update_coupling_refs()
+                        target_object.create_or_update_subtasks_internal()
                     self.controller.share_state_now = True
                 elif p_val[0]==LLControlInterface.cmd_create_llobject:
                     classname = p_val[1]
@@ -326,6 +350,9 @@ class LLControlConnection(object):
                                     if d not in siblingdeps:
                                         siblingdeps.append(d)
                     self.controller.share_state_now = True
+                elif p_val[0]==LLControlInterface.cmd_plan_and_execute:
+                    LL.LL_ROOT.task.execute()
+                    self.controller.share_state_now = True
 
         except IOError:
             QtWidgets.qApp.quit()
@@ -341,6 +368,9 @@ class LLControlConnection(object):
                            mmap(-1, self.state_mmap_size, self.state_mmap_name + 'B'))
 
     def share_system_state(self):
+        if not self.state_sharing:
+            return
+
         start = timer()
         # grab access to one of the buffers. only in exceptional circumstances will it find both to be busy.. (other process only uses one at a time)
         if self.state_mutex[0].acquire(0): # try to acquire mutex 0
@@ -354,20 +384,23 @@ class LLControlConnection(object):
         # a mutex is locked. we can safely dump the data into the shared memory
         dump_buf = c_void_p.from_buffer(self.state_mmap[mutexid])
         loc = addressof(dump_buf)
-        c_double.from_address(loc).value = timer()
+        time =  timer()
+        c_double.from_address(loc).value = time
         LL.LL_ROOT.binaryshare_dump(loc)
 
         # release the mutex so the other process can access the data
         self.state_mutex[mutexid].release()
         stop = timer()
         time = stop-start
-        print("Dumped in " + str(time))
+        #print("Dumped in " + str(time))
 
 
 # it's only a qobject so we can use some nice slots
 class LLControlInterface(Qt.QObject):
     system_state_updated = Qt.pyqtSignal()
 
+    cmd_load_shutdown_state = -1
+    cmd_save_and_quit = 0
     cmd_state_sharing = 1
     cmd_state_pipe = 2
     cmd_set_parameter = 3
@@ -375,6 +408,7 @@ class LLControlInterface(Qt.QObject):
     cmd_remove_llobject = 5
     cmd_create_lltask = 6
     cmd_remove_lltask = 7
+    cmd_plan_and_execute = 8
 
     def __init__(self, interface_creation_q):
         super(LLControlInterface,self).__init__()
@@ -419,7 +453,7 @@ class LLControlInterface(Qt.QObject):
         # self.state_pipe = local_pipe
         # self.control_pipe.send((self.cmd_state_pipe, multiprocessing.reduction.reduce_connection(remote_pipe)))
 
-        self.state_prevtime = timer()
+        self.state_prevtime = 0.
 
     def update_system_state(self):
         # check for a newer state
@@ -430,7 +464,7 @@ class LLControlInterface(Qt.QObject):
             dump_buf = c_void_p.from_buffer(self.state_mmap[0])
             loc = addressof(dump_buf)
             if c_double.from_address(loc).value>self.state_prevtime:
-                print("Loading state from buffer A")
+                print("GUI loading state from buffer A")
                 self.load_system_state(loc)
                 self.state_prevtime = c_double.from_address(loc).value
                 something_loaded = True
@@ -439,7 +473,7 @@ class LLControlInterface(Qt.QObject):
             dump_buf = c_void_p.from_buffer(self.state_mmap[1])
             loc = addressof(dump_buf)
             if c_double.from_address(loc).value>self.state_prevtime:
-                print("Loading state from buffer B")
+                print("GUI loading state from buffer B")
                 self.load_system_state(loc)
                 self.state_prevtime = c_double.from_address(loc).value
                 something_loaded = True
@@ -450,10 +484,10 @@ class LLControlInterface(Qt.QObject):
             #print("devices:", len(self.state_devices))
             self.state_pulses = self.state_root["Pulses"]
             self.state_task = self.state_root["Task"]
-            self.state_exp_setups = self.state_root["Experiment Setups"]
-            self.state_couplings = self.state_root["Couplings"]
-            if len(self.state_exp_setups.ll_children)>0:
-                self.state_exp_setup = self.state_exp_setups.ll_children[0]
+            self.state_exp_setups = self.state_root["Experiment Setups"].ll_children
+            self.state_couplings = self.state_root["Couplings"].ll_children
+            if len(self.state_exp_setups)>0:
+                self.state_exp_setup = self.state_exp_setups[0]
             self.system_state_updated.emit()
 
     def load_system_state(self, dump_loc):
@@ -513,6 +547,15 @@ class LLControlInterface(Qt.QObject):
         if task is None:
             return
         self.control_pipe.send((self.cmd_remove_lltask, task.ref_id, move_dependents))
+
+    def plan_and_execute(self):
+        self.control_pipe.send((self.cmd_plan_and_execute, ))
+
+    def save_and_quit(self):
+        self.control_pipe.send((self.cmd_save_and_quit, ))
+
+    def load_shutdown_state(self):
+        self.control_pipe.send((self.cmd_load_shutdown_state, ))
 
 class LLObjectInterface(object):
     def __init__(self):
@@ -617,32 +660,163 @@ class LLObjectInterface(object):
 
 class LLParameterInterface(object):
     def __init__(self):
-        self.label=""
-        self.value=None
-        self.ptype=0
         self.obj_ref=None
+        self.ptype=0
+        self.value=None
+        self.label=""
+        self.unit=""
+        self.xvals = None
+        self.xlabel = ""
+        self.xunit = ""
+        self.value_dict = None
+        self.select_from = None
+        self.read_only = False
+        self.visible =  False
+        self.ptype_filter = tuple()
 
-    def binaryshare_loadrefs(self,loc, dump):
-        loc = self.data_start_loc
-        if self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER:
-            addr = c_int.from_address(loc).value
-            if addr<0:
-                self.value = None
+    def from_string(self, string):
+        if self.ptype==LLObjectParameter.PTYPE_FLOAT or self.ptype==LLObjectParameter.PTYPE_FLOAT:
+            string = ''.join(string.split())
+            string =  string.replace(",","")
+            lowcase_string = string.lower()
+
+            if lowcase_string.endswith(self.unit.lower()):
+                string = string[:-len(self.unit)]
+            expchar = string[-1]
+            expchar_lc = expchar.lower()
+
+            if expchar_lc=='k':
+                exp = 1
+            elif expchar=='M':
+                exp = 2
+            elif expchar_lc=='g':
+                exp = 3
+            elif expchar_lc=='t':
+                exp = 4
+            elif expchar == 'm':
+                exp = -1
+            elif expchar_lc == 'u':
+                exp = -2
+            elif expchar_lc == 'n':
+                exp = -3
+            elif expchar_lc == 'p':
+                exp = -4
+            elif expchar_lc == 'f':
+                exp = -5
             else:
-                ref = c_int.from_address(dump+addr).value
-                self.value = cast(ref, py_object).value
+                exp = 0
+
+            numbers = re.findall("[-+]?\d+[\.]?\d*[eE]?[-+]?\d*", string)
+            value = float(numbers[0]) * 1000**(exp)
+
+            return value
+        else:
+
+            return string
+
+
+    def to_string(self):
+        def llobj_to_string(obj):
+            if obj is None or len(obj.ll_params)==0:
+                return 'None'
+            else:
+                if obj.ll_params[0].ptype == LLObjectParameter.PTYPE_STR:
+                    return str(obj.ll_params[0].value)
+                else:
+                    return "%s{%i}" % (obj.classname, obj.ref_id)
+
+        if self.ptype==LLObjectParameter.PTYPE_INT or self.ptype==LLObjectParameter.PTYPE_FLOAT:
+            if self.unit not in ('pi','dBm'):
+                try:
+                    log1000 = math.log(self.value, 1000.0)
+                except:
+                    log1000 = 0.0
+                if log1000 >= 0.0:
+                    if log1000 < 1.0:
+                        exp = 0
+                        expchar = ''
+                    elif log1000 < 2.0:
+                        exp = 1
+                        expchar = 'k'
+                    elif log1000 < 3.0:
+                        exp = 2
+                        expchar = 'M'
+                    elif log1000 < 4.0:
+                        exp = 3
+                        expchar = 'G'
+                    else:
+                        exp = 4
+                        expchar = 'T'
+                else:
+                    if log1000 >= -1.0:
+                        exp = -1
+                        expchar = 'm'
+                    elif log1000 >= -2.0:
+                        exp = -2
+                        expchar = 'u'
+                    elif log1000 >= -3.0:
+                        exp = -3
+                        expchar = 'n'
+                    elif log1000 >= -4.0:
+                        exp = -4
+                        expchar = 'p'
+                    else:
+                        exp = -5
+                        expchar = 'f'
+                sigval = self.value*(1000.0**-exp)
+            else:
+                sigval = self.value
+                exp = 0
+                expchar= ''
+            return "%.4f %s%s" % (sigval, expchar, self.unit)
+        elif self.ptype==LLObjectParameter.PTYPE_LLOBJECT:
+            return llobj_to_string(self.value)
+        elif self.ptype==LLObjectParameter.PTYPE_LLOBJECT_LIST:
+            string = ""
+            for val in self.value:
+                string += llobj_to_string(val)
+                string += ", "
+            return string
+        else:
+            return str(self.value)
+
+    def binaryshare_loadrefs(self, loc, dump):
+
+        def load_string(loc):
+            strlen =  c_int.from_address(loc).value
+            loc+=sizeof(c_int)
+            return (c_char*strlen).from_address(loc).value, loc+strlen
+
+        def load_object(loc):
+            addr = c_int.from_address(loc).value
+            if addr < 0:
+                obj = None
+            else:
+                ref = c_int.from_address(dump + addr).value
+                obj = cast(ref, py_object).value
+            return obj, loc+sizeof(c_int)
+
+        loc = self.data_start_loc
+
+        if self.ptype==LLObjectParameter.PTYPE_LLOBJECT or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER:
+            self.select_from, loc = load_object(loc)
+            ptype_filter_str, loc = load_string(loc)
+            self.ptype_filter = eval(ptype_filter_str)
+
+            self.value, loc = load_object(loc)
+
         elif self.ptype==LLObjectParameter.PTYPE_LLOBJECT_LIST or self.ptype==LLObjectParameter.PTYPE_LLPARAMETER_LIST:
+            self.select_from, loc = load_object(loc)
+            ptype_filter_str, loc = load_string(loc)
+            self.ptype_filter = eval(ptype_filter_str)
+
             num = c_int.from_address(loc).value
             loc +=sizeof(c_int)
             self.value = []
             for i in range(num):
-                addr = c_int.from_address(loc).value
-                if addr < 0:
-                    self.value.append(None)
-                else:
-                    ref = c_int.from_address(dump + addr).value
-                    self.value.append(cast(ref, py_object).value)
-                loc+=sizeof(c_int)
+                obj, loc = load_object(loc)
+                self.value.append(obj)
+
         return self.data_end_loc
 
     def binaryshare_load(self, loc):

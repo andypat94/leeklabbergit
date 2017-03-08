@@ -4,6 +4,41 @@ import PyQt5.QtGui as QtGui
 import PyQt5.QtWidgets as QtWidgets
 
 class LLQtSelectionDialog(QtWidgets.QDialog):
+    @staticmethod
+    def autodialog_param(llci, param):
+        if param.ptype==LL.LLObjectParameter.PTYPE_LLOBJECT:
+            object_n_parameter = True
+            list_selection = False
+        elif param.ptype==LL.LLObjectParameter.PTYPE_LLPARAMETER:
+            object_n_parameter = False
+            list_selection = False
+        elif param.ptype==LL.LLObjectParameter.PTYPE_LLOBJECT_LIST:
+            object_n_parameter = True
+            list_selection = True
+        else:
+            return
+        dialog = LLQtSelectionDialog(object_n_parameter, list_selection)
+        if not object_n_parameter:
+            dialog.set_parameter_filter(param.ptype_filter)
+        if param.select_from is None:
+            object_list = []
+        else:
+            object_list = param.select_from.ll_children
+        dialog.set_objects(object_list, None)
+        if object_n_parameter:
+            if list_selection:
+                dialog.set_selected_objects(param.value)
+            else:
+                dialog.set_selected_object(param.value)
+        else:
+            dialog.set_selected_parameter(param.value)
+        dialog.exec_()
+        if dialog.result()==QtWidgets.QDialog.Accepted:
+            if list_selection:
+                llci.set_parameter(param, dialog.selected_items)
+            else:
+                llci.set_parameter(param, dialog.selected_item)
+
     def __init__(self, object_n_parameter=True, list_selection=False):
         super(LLQtSelectionDialog,self).__init__()
         self.object_n_parameter = object_n_parameter
@@ -80,13 +115,17 @@ class LLQtSelectionDialog(QtWidgets.QDialog):
         pass
 
 
-    def set_objects(self, all_objects, paramname):
+    def set_objects(self, all_objects, paramname=None):
         self.all_objects = all_objects
         self.object_table.setRowCount(len(self.all_objects))
         self.object_table.clearContents()
         row = 0
         for obj in self.all_objects:
-            item = QtWidgets.QTableWidgetItem(obj[paramname])
+            if paramname is None:
+                label = str(obj.ll_params[0].value)
+            else:
+                label = obj[paramname]
+            item = QtWidgets.QTableWidgetItem(label)
             item.setFlags(item.flags() & ~Qt.Qt.ItemIsEditable)
             item.setData(Qt.Qt.UserRole, obj)
             self.object_table.setItem(row, 0, item)

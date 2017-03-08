@@ -12,7 +12,7 @@ class LLInstrument4DSPBox(LLInstrument):
         self.p_fast_dac_data = np.zeros(shape=(8,200000),dtype='double') #8 channels x 100us memory @ 2GS/s
         self.p_adc_data = np.zeros(shape=(8,100000),dtype='double') # 8 channels x 100us memory @ 1GS/s
         self.p_slow_t = np.linspace(0.,100.0e-6-1.0e-9, 100000) # Time values to go along with the slow_dac_data
-        self.p_fast_t = np.linspace(0.,100.0e-6-0.5e-9, 100000) # Time values to go along with the fast_dac_data
+        self.p_fast_t = np.linspace(0.,100.0e-6-0.5e-9, 200000) # Time values to go along with the fast_dac_data
 
         self.add_parameter('p_rep_time', label='Repetition Time', unit='s')
         self.add_parameter('p_num_averages', label='Averages')

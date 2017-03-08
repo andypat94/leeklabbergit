@@ -187,6 +187,7 @@ class LLDrive(LLObject):
                 new_data = np.resize(self.p_dac_data.get_value(),cur_shape)
                 self.p_dac_data.set_value(new_data)
                 self.p_dac_data.set_xvals(self.t_vals[0:exp_len_n])
+            t = self.p_dac_data.get_xvals()
             dac_i = self.p_dac_data.get_value()[self.p_dac_ch_num_i]
             dac_q = self.p_dac_data.get_value()[self.p_dac_ch_num_q]
 
@@ -194,8 +195,13 @@ class LLDrive(LLObject):
             dac_i.fill(0.)
             dac_q.fill(0.)
             for pulse in self.pulses:
-                dac_i[pulse.start_n:pulse.stop_n] += pulse.p_ac_i
-                dac_q[pulse.start_n:pulse.stop_n] += pulse.p_ac_q
+                if pulse.p_pulsed:
+                    dac_i[pulse.start_n:pulse.stop_n] += pulse.p_ac_i
+                    dac_q[pulse.start_n:pulse.stop_n] += pulse.p_ac_q
+                else:
+                    # a continuous drive was assigned to a modulated line so create a continuous IF
+                    dac_i += pulse.p_amp_scale*np.cos(2.0*np.pi*pulse.p_if_freq*t)
+                    dac_q += pulse.p_amp_scale*np.sin(2.0*np.pi*pulse.p_if_freq*t)
 
             max = np.abs(dac_i).max()
             qmax = np.abs(dac_q).max()
@@ -441,6 +447,15 @@ class LLExpSetup(LLObject):
         self.p_mwcls = []
         self.add_parameter('p_mwcls',label="Microwave Control Lines",ptype=LLObjectParameter.PTYPE_LLOBJECT_LIST)
 
+    def update_coupling_refs(self):
+
+        for dev in LL.LL_ROOT.devices.ll_children:
+            dev.clear_coupling_refs()
+
+        for cp in LL.LL_ROOT.couplings.ll_children:
+            cp.add_coupling_refs() #gives all devices a reference to any couplings associated with them
+
+
     def prepare_experiment(self):
         # Refresh the list of couplings and mwcls in all devices
         # TODO: In future it would be good to only do these things if they are really necessary?
@@ -448,6 +463,7 @@ class LLExpSetup(LLObject):
         for dev in LL.LL_ROOT.devices.ll_children:
             dev.clear_coupling_refs()
             dev.clear_mwcl_refs()
+            dev.clear_state_vars()
 
         for mwcl in self.p_mwcls:
             mwcl.clear_pulses()

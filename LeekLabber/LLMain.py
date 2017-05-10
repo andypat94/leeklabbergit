@@ -25,6 +25,8 @@ import re
 
 import xml.etree.ElementTree as xmlet
 
+from os  import  getpid
+
 LL.CONTROLLER = None
 
 def start_leeklabber():
@@ -46,10 +48,13 @@ def start_leeklabber():
     # pass nothing but this interface to the gui thread
     tray = LL.LLQtSystemTray(llci)
     app.setQuitOnLastWindowClosed(False)
+    print "Gui Thread %i" % getpid()
     app.exec_() #start the gui on this thread (necessary)
 
 
+
 def LLControllerThread(interface_creation_q,*args,**kwargs):
+    print "Controller Thread %i" % getpid()
 
     gc.disable() # cyclic references in this  control process will now stick around forever unless dealt with.. ok
     controller = LLController(interface_creation_q)
@@ -69,6 +74,7 @@ class LLController(object):
         LL.LL_ROOT = LL.LLRoot.from_blank()  # create a blank global root instance.
 
     def add_test_system(self):
+
         # Create Instruments
         i_SGS_QUBIT2 = LLInstruments.LLInstrumentRSSGS()
         i_SGS_QUBIT2['Instrument Name'] = "Qubit Generator 2"
@@ -191,6 +197,10 @@ class LLController(object):
         gate3["Rotation Angle"] = 0.5  # pi pulse
         gate3["Task Dependences"] = [gate2, ]
 
+        gate4 = LLTasks.LLTaskSingleQMeasure(LL.LL_ROOT.task)
+        gate4["Qubit Device"] = qd_Q1  # qubit 1
+        gate4["Task Dependences"] = [gate3, ]
+
         # large number of gates test
         # prevGate = gate3
         # for i in range(4):
@@ -234,10 +244,11 @@ class LLController(object):
     def share_system_state(self):
         length = sizeof(c_double)
         length += LL.LL_ROOT.binaryshare_set_location_get_length(length)
+
         print "Dumping root " + str(length/1024.)+ " kB."
 
         for conn in self.connections:
-            conn.share_system_state()
+            conn.share_system_state(length)
 
 
 class LLControlConnection(object):
@@ -372,9 +383,12 @@ class LLControlConnection(object):
         self.state_mmap = (mmap(-1, self.state_mmap_size, self.state_mmap_name + 'A'),
                            mmap(-1, self.state_mmap_size, self.state_mmap_name + 'B'))
 
-    def share_system_state(self):
+    def share_system_state(self, size):
         if not self.state_sharing:
             return
+
+        if size > self.state_mmap_size:
+            print "State share size %fMB exceeds %fMB mmap file." % (size/1024./1024., self.state_mmap_size/1024./1024.)
 
         start = timer()
         # grab access to one of the buffers. only in exceptional circumstances will it find both to be busy.. (other process only uses one at a time)
@@ -440,7 +454,7 @@ class LLControlInterface(Qt.QObject):
             pass
         return local_pipe
 
-    def enable_system_state_share(self, bufsize=256*2**20): # default 128 MB buffer
+    def enable_system_state_share(self, bufsize=1*2**28): # default 256 MB buffer
         if self.state_sharing:
             return
         self.state_sharing = True
@@ -500,7 +514,7 @@ class LLControlInterface(Qt.QObject):
         dump_abs = dump_loc
         dump_loc += sizeof(c_double) #skip over timer
         if self.state_root is not None:
-            #self.state_root.destroy_hierarchy()
+            self.state_root.destroy_hierarchy()
             self.state_root = None
         self.state_root = LLObjectInterface()
         self.state_root.binaryshare_load(dump_loc)

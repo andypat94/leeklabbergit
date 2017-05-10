@@ -40,6 +40,8 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.actExpSetup.triggered.connect(self.menuExpSetup)
         self.actTaskSetup = self.menu.addAction("Task Setup")
         self.actTaskSetup.triggered.connect(self.menuTaskSetup)
+        self.actSweepSetup = self.menu.addAction("Sweep Setup")
+        self.actSweepSetup.triggered.connect(self.menuSweepSetup)
         self.menu.addSeparator()
         self.actQuit = self.menu.addAction("Quit")
         self.actQuit.triggered.connect(self.menuQuit)
@@ -52,6 +54,10 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
         self.taskSetupWidget = LL.LLQtTaskSetupWidget(llci)
         self.taskSetupWidget.setWindowIcon(self.phi_icon)
         self.taskSetupWidget.show()
+
+        self.sweepSetupWidget = LL.LLQtSweepSetupWidget(llci)
+        self.sweepSetupWidget.setWindowIcon(self.phi_icon)
+        self.sweepSetupWidget.show()
 
         self.instrumentsWidget = LL.LLQtInstrumentsWidget(llci)
         self.instrumentsWidget.setWindowIcon(self.phi_icon)
@@ -73,6 +79,9 @@ class LLQtSystemTray(QtWidgets.QSystemTrayIcon):
 
     def menuTaskSetup(self):
         self.show_window(self.taskSetupWidget)
+
+    def menuSweepSetup(self):
+        self.show_window(self.sweepSetupWidget)
 
     def menuInstruments(self):
         self.show_window(self.instrumentsWidget)

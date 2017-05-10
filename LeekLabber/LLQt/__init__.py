@@ -6,4 +6,5 @@ from LLQtParameterEditor import *
 from LLQtInstrumentsWidget import *
 from LLQtDevicesWidget import *
 from LLQtInstrumentsWidget import *
+from LLQtSweepSetupWidget import *
 from LLQtPlots import *

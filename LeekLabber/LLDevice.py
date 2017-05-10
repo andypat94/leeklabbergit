@@ -24,7 +24,6 @@ class LLDevice(LLObject):
         pass
 
     def get_couplings(self, type):
-        print len(self.couplings)
         return [coupling for coupling in self.couplings if coupling.p_coupling_type==type]
 
     def get_coupling(self, type):

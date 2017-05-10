@@ -20,4 +20,10 @@ class LLInstrument4DSPBox(LLInstrument):
         self.add_parameter('p_fast_dac_data', label='2GS DAC Data', unit='V', xvals='p_fast_t', xunit='s', xlabel='Time')
         self.add_parameter('p_adc_data', label='ADC Data', unit='V', xvals='p_slow_t', xunit='s', xlabel='Time')
 
+    def setup_instrument(self):
+        pass
+
+    def readout_instrument(self):
+        # do some pretend readout
+        self.p_adc_data = self.p_slow_dac_data
 

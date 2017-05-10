@@ -86,10 +86,11 @@ class LLTask(LLObject):
         print(("    "*increment)+ "END "+ self.__class__.__name__ + " @ " + str(self.timeslot_end))
 
     def process_experiment_internal(self):
-        self.process_experiment()
-        #search for a child that is ready to be executed and execute it
+        # process child tasks first
         for child in [child for child in self.ll_children if isinstance(child, LLTask)]:
              child.process_experiment_internal()
+
+        self.process_experiment()
 
     def execute(self, exp_setup=None): #execute as the top level task on an experimental setup as passed in
         if exp_setup is None:
@@ -99,7 +100,10 @@ class LLTask(LLObject):
         # todo: consider not replanning the experiment unless necessary (i.e. if submit_experiment fails?)
         exp_setup.plan_experiment()
         self.submit_experiment_internal()
-        exp_setup.execute(self.get_task_length())
+        length = self.get_task_length()
+        if length > 1e-3: #todo make this a configurable parameter?
+            length = 1e-3
+        exp_setup.execute(length)
         self.process_experiment_internal()
 
     def prepare_pulse(self, pulse, device, frequency, power, pulsed=False, measured=False):

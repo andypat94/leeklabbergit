@@ -1,6 +1,7 @@
 from LeekLabber import *
 import LeekLabber as LL
 import numpy as np
+import math
 
 class LLMicrowaveControlLine(LLObject):
     def __init__(self, exp_setup=None, NDrives=2, NReadouts=1):
@@ -71,6 +72,13 @@ class LLMicrowaveControlLine(LLObject):
                         if drive.try_pulse(pulse):
                             planned_pulses += 1
                             break
+            # Next we place the unmodulated, measured pulses in modulated slots if necessary
+            for pulse in self.pulses:
+                if pulse.p_measured and (not pulse.p_pulsed):
+                    for drive in self.p_drives:
+                        if drive.try_pulse(pulse, True):
+                            planned_pulses += 1
+                            break
             # Next we place the modulated, unmeasured pulses
             for pulse in self.pulses:
                 if (not pulse.p_measured) and pulse.p_pulsed:
@@ -106,6 +114,10 @@ class LLMicrowaveControlLine(LLObject):
     def execute(self, experiment_length):
         for drive in self.p_drives:
             drive.execute(experiment_length)
+
+    def process_readout(self):
+        for drive in self.p_drives:
+            drive.process_readout()
 
 class LLDrive(LLObject):
     def __init__(self, mwcl=None):
@@ -145,7 +157,7 @@ class LLDrive(LLObject):
         self.if_window = 0.
         self.power_window = 40.
         self.freq_res = 1.0e3
-        self.max_t = 1.0e-3
+        self.max_t = 1.0e-3 #todo: configurable property? max possible time length
         self.max_samples = 0
         self.t_vals = None
 
@@ -182,12 +194,13 @@ class LLDrive(LLObject):
             # Connect to and resize dac data if necessary
             exp_len_n = int((experiment_length/self.dac_dt)+0.5)
             cur_shape = list(self.p_dac_data.get_value().shape)
-            if cur_shape[-1] != exp_len_n:
+            t = self.p_dac_data.get_xvals()
+            if cur_shape[-1] != exp_len_n or len(t) != exp_len_n:
                 cur_shape[-1] = exp_len_n
                 new_data = np.resize(self.p_dac_data.get_value(),cur_shape)
                 self.p_dac_data.set_value(new_data)
                 self.p_dac_data.set_xvals(self.t_vals[0:exp_len_n])
-            t = self.p_dac_data.get_xvals()
+                t = self.p_dac_data.get_xvals()
             dac_i = self.p_dac_data.get_value()[self.p_dac_ch_num_i]
             dac_q = self.p_dac_data.get_value()[self.p_dac_ch_num_q]
 
@@ -196,12 +209,20 @@ class LLDrive(LLObject):
             dac_q.fill(0.)
             for pulse in self.pulses:
                 if pulse.p_pulsed:
-                    dac_i[pulse.start_n:pulse.stop_n] += pulse.p_ac_i
-                    dac_q[pulse.start_n:pulse.stop_n] += pulse.p_ac_q
+                    if pulse.stop_n <= exp_len_n:
+                        dac_i[pulse.start_n:pulse.stop_n] += pulse.p_ac_i
+                        dac_q[pulse.start_n:pulse.stop_n] += pulse.p_ac_q
+                    elif pulse.start_n <= exp_len_n:
+                        dac_i[pulse.start_n:] += pulse.p_ac_i[:exp_len_n-pulse.start_n]
+                        dac_q[pulse.start_n:] += pulse.p_ac_q[:exp_len_n-pulse.start_n]
+                    else:
+                        pass
                 else:
                     # a continuous drive was assigned to a modulated line so create a continuous IF
-                    dac_i += pulse.p_amp_scale*np.cos(2.0*np.pi*pulse.p_if_freq*t)
-                    dac_q += pulse.p_amp_scale*np.sin(2.0*np.pi*pulse.p_if_freq*t)
+                    pulse.cosift = np.cos(2.0*np.pi*pulse.p_if_freq*t)
+                    pulse.sinift = np.sin(2.0*np.pi*pulse.p_if_freq*t)
+                    dac_i += pulse.p_amp_scale*pulse.cosift
+                    dac_q += pulse.p_amp_scale*pulse.sinift
 
             max = np.abs(dac_i).max()
             qmax = np.abs(dac_q).max()
@@ -229,12 +250,54 @@ class LLDrive(LLObject):
             self.p_readout_generator["IQ Modulation"] = False
             self.p_readout_generator["Output"] = self.plan_output
 
+    def process_readout(self):
+        if self.p_readout_capable:
+            adc_i = self.p_adc_data.get_value()[self.p_adc_ch_num_i]
+            adc_q = self.p_adc_data.get_value()[self.p_adc_ch_num_q]
+
+            for pulse in self.pulses:
+                if pulse.p_measured:
+                    if pulse.p_pulsed:
+                        i = adc_i[pulse.readout_start_n:pulse.readout_stop_n]
+                        q = adc_q[pulse.readout_start_n:pulse.readout_stop_n]
+                        pulse.process_readout(i, q, self.dac_dt==self.adc_dt)
+                    else:
+                        # these werent filled in by a call to get_timebase, so fill them in now
+                        pulse.readout_t_vals = self.readout_t_vals[0:len(adc_i)]
+                        pulse.readout_abs_t = pulse.readout_t_vals
+                        pulse.readout_start_n = 0
+                        pulse.readout_stop_n = len(adc_i)
+                        pulse.readout_length_n = len(adc_i)
+                        pulse.process_readout(adc_i,adc_q, self.dac_dt==self.adc_dt)
+
     def get_timebase(self, pulse, start, length):
         pulse.start_n = int((start/self.dac_dt)+0.5)
         pulse.length_n =  int((length/self.dac_dt)+0.5)
+        if pulse.length_n + pulse.start_n > len(self.t_vals):
+            pulse.length_n = len(self.t_vals) - pulse.start_n
+            if pulse.length_n < 0:
+                pulse.length_n = 0
         pulse.stop_n = pulse.start_n + pulse.length_n
         pulse.t_vals = self.t_vals[0:pulse.length_n]
         pulse.abs_t = self.t_vals[pulse.start_n:pulse.stop_n]
+
+        if pulse.p_measured:
+            if self.adc_dt == self.dac_dt:
+                pulse.readout_start_n = pulse.start_n
+                pulse.readout_length_n = pulse.length_n
+                pulse.readout_stop_n = pulse.stop_n
+                pulse.readout_t_vals = pulse.t_vals
+                pulse.readout_abs_t = pulse.abs_t
+            else:
+                pulse.readout_start_n = int((start/self.adc_dt)+0.5)
+                pulse.readout_length_n = int((length/self.adc_dt)+0.5)
+                if pulse.readout_length_n + pulse.readout_start_n > len(self.readout_t_vals):
+                    pulse.readout_length_n = len(self.readout_t_vals) - pulse.readout_start_n
+                    if pulse.readout_length_n < 0:
+                        pulse.readout_length_n = 0
+                pulse.readout_stop_n = pulse.readout_start_n + pulse.readout_length_n
+                pulse.readout_t_vals = self.readout_t_vals[0:pulse.readout_length_n]
+                pulse.readout_abs_t = self.readout_t_vals[pulse.readout_start_n:pulse.readout_stop_n]
 
     def dac_added(self):
         if self.p_dac_data is None:
@@ -242,15 +305,30 @@ class LLDrive(LLObject):
             self.dac_dt = 0.
         else:
             tvals = self.p_dac_data.get_xvals()
-            if len(tvals)>0:
+            if len(tvals)>1:
                 self.dac_dt = tvals[1]-tvals[0]
                 self.if_window = 1.0/self.dac_dt
                 self.max_samples = int((self.max_t/self.dac_dt)+0.5)
                 self.t_vals = np.linspace(start=0.0, stop=self.max_t, num=self.max_samples, endpoint=False)
+            else:
+                self.dac_dt = 0.0
+                self.if_window = 0
+                #self.max_samples = 0
+                self.t_vals = np.empty(0)
             self.p_pulsed_capable = True
 
     def adc_added(self):
         self.p_readout_capable = self.p_adc_data is not None
+        if self.p_readout_capable:
+            tvals = self.p_dac_data.get_xvals()
+            if len(tvals)>1:
+                self.adc_dt = tvals[1]-tvals[0]
+                self.readout_max_samples = int((self.max_t/self.adc_dt)+0.5)
+                self.readout_t_vals = np.linspace(start=0.0, stop=self.max_t, num=self.readout_max_samples, endpoint=False)
+            else:
+                self.adc_dt = 0.0
+        else:
+            self.adc_dt = 0.
 
     def clear_plan(self):
         self.planned = False
@@ -304,7 +382,7 @@ class LLDrive(LLObject):
             self.p_max_freq = max_freq
             self.p_min_power = min_power
             self.p_max_power = max_power
-            self.mod_required = self.mod_required or pulse.p_pulsed or (max_freq-min_freq)>self.freq_res
+            self.mod_required = self.mod_required or pulse.p_pulsed or (max_freq-min_freq)>self.freq_res or pulse.p_measured #measured pulses require upconversion?
 
             pulse.set_drive(self)
             self.pulses.append(pulse)
@@ -318,7 +396,7 @@ class LLDrive(LLObject):
             self.p_max_freq = pulse.p_frequency
             self.p_min_power = pulse.p_power
             self.p_max_power = pulse.p_power
-            self.mod_required = pulse.p_pulsed
+            self.mod_required = pulse.p_pulsed or pulse.p_measured # measured pulses require upconversion?
 
             pulse.set_drive(self)
             self.pulses.append(pulse)
@@ -329,11 +407,21 @@ class LLDrive(LLObject):
         self.plan_output = self.planned
         self.plan_power = self.p_max_power
         self.plan_modulated = self.mod_required
+
+
         if self.plan_modulated :
             span = self.p_max_freq - self.p_min_freq
-            if (span < self.if_window * 0.4):
-                self.plan_lo_frequency = (self.p_max_freq + self.p_min_freq) / 2. - 0.25 * self.if_window
-            elif (span < self.if_window * 0.9):
+
+            # if span is less than 500MHz but the window is larger, lets use a 500e6 window instead
+            # results in lower if frequencies being chosen in most cases (max 250e6)
+            if self.if_window > 500.0e6 and span < 500.0e6:
+                window = 500.0e6
+            else:
+                window =  self.if_window
+
+            if (span < window * 0.4):
+                self.plan_lo_frequency = (self.p_max_freq + self.p_min_freq) / 2. - 0.25 * window
+            elif (span < window * 0.9):
                 self.plan_lo_frequency = (self.p_max_freq + self.p_min_freq) / 2.# - 0.05 * self.if_window
             else:
                 self.plan_lo_frequency = (self.p_max_freq + self.p_min_freq) / 2.
@@ -372,11 +460,19 @@ class LLPulse(LLObject):
         self.p_ac_i = np.empty(0)
         self.p_ac_q = np.empty(0)
         self.p_basis_phase = 0.
+
         self.start_n = 0
         self.stop_n = 0
         self.length_n = 0
         self.t_vals = np.empty(0)
         self.abs_t = np.empty(0)
+
+        self.readout_start_n = 0
+        self.readout_stop_n = 0
+        self.readout_length_n = 0
+        self.readout_t_vals = np.empty(0)
+        self.readout_abs_t = np.empty(0)
+
         self.p_bas_i = np.empty(0)
         self.p_bas_q = np.empty(0)
 
@@ -392,6 +488,24 @@ class LLPulse(LLObject):
         self.add_parameter('p_basis_phase', label="Basis Phase", unit='pi')
         self.add_parameter('p_ac_i', label="AC I", unit='V')
         self.add_parameter('p_ac_q', label="AC Q", unit='V')
+
+
+        self.p_readout_raw_i =  np.empty(0.)
+        self.p_readout_raw_q =  np.empty(0.)
+        self.p_readout_dc_i =  np.empty(0.)
+        self.p_readout_dc_q =  np.empty(0.)
+        self.p_readout_mean_i = 0.
+        self.p_readout_mean_q = 0.
+        self.p_readout_mean_mag = 0.
+        self.p_readout_mean_arg = 0.
+        self.add_parameter('p_readout_raw_i', label='Readout AC I', unit='V')
+        self.add_parameter('p_readout_raw_q', label='Readout AC Q', unit='V')
+        self.add_parameter('p_readout_dc_i', label='Readout AC I', unit='V')
+        self.add_parameter('p_readout_dc_q', label='Readout AC Q', unit='V')
+        self.add_parameter('p_readout_mean_i', label='Readout Mean I', unit='V')
+        self.add_parameter('p_readout_mean_q', label='Readout Mean Q', unit='V')
+        self.add_parameter('p_readout_mean_mag', label='Readout Mean Mag', unit='V')
+        self.add_parameter('p_readout_mean_arg', label='Readout Mean Arg', unit='pi')
 
     def check_drive(self):
         if self.p_planned_drive is None:
@@ -424,21 +538,54 @@ class LLPulse(LLObject):
         return self.t_vals
 
     def submit_pulse(self, dc_i, dc_q, basis_phase):
+        if len(self.abs_t) == len(dc_i) and len(dc_i) == len(dc_q):
+            pass
+        else:
+            self.p_dc_i = np.empty(0)
+            self.p_dc_q = np.empty(0)
+            self.p_basis_phase = basis_phase
+            self.p_bas_i = np.empty(0)
+            self.p_bas_q = np.empty(0)
+            self.p_ac_i = np.empty(0)
+            self.p_ac_q =  np.empty(0)
+            return
+
         self.p_dc_i = dc_i
         self.p_dc_q = dc_q
         self.p_basis_phase = basis_phase
 
-        # rotate BACKWARDS into the basis
+        # rotate FORWARDS into the basis (a change of basis must be a negative number)
         cosbp = self.p_amp_scale*np.cos(np.pi*basis_phase)
         sinbp = self.p_amp_scale*np.sin(np.pi*basis_phase)
-        self.p_bas_i = cosbp*dc_i + sinbp*dc_q
-        self.p_bas_q = -sinbp*dc_i + cosbp*dc_q
+        self.p_bas_i = cosbp*dc_i - sinbp*dc_q
+        self.p_bas_q = sinbp*dc_i + cosbp*dc_q
 
         # rotate FORWARDS into the rotating frame
-        cosift = np.cos(2.0*np.pi*self.p_if_freq*self.abs_t)
-        sinift = np.sin(2.0*np.pi*self.p_if_freq*self.abs_t)
-        self.p_ac_i = cosift*self.p_bas_i - sinift*self.p_bas_q
-        self.p_ac_q = sinift*self.p_bas_i + cosift*self.p_bas_q
+        self.cosift = np.cos(2.0*np.pi*self.p_if_freq*self.abs_t)
+        self.sinift = np.sin(2.0*np.pi*self.p_if_freq*self.abs_t)
+        self.p_ac_i = self.cosift*self.p_bas_i - self.sinift*self.p_bas_q
+        self.p_ac_q = self.sinift*self.p_bas_i + self.cosift*self.p_bas_q
+
+    def process_readout(self, adc_i, adc_q, use_buffered_if=False):
+        if use_buffered_if:
+            cosift = self.cosift
+            sinift = self.sinift
+        else:
+            cosift = np.cos(2.0*np.pi*self.p_if_freq*self.readout_abs_t)
+            sinift = np.sin(2.0*np.pi*self.p_if_freq*self.readout_abs_t)
+
+        self.p_readout_raw_i = adc_i
+        self.p_readout_raw_q = adc_q
+        #todo: decide whether to take off the basis rotation or not?
+        #todo: should really reply with a power as well, if we could change amplification etc.
+        self.p_readout_dc_i = cosift*adc_i + sinift*adc_q
+        self.p_readout_dc_q = -sinift*adc_i + cosift*adc_q
+
+        self.p_readout_mean_i =  np.mean(self.p_readout_dc_i)
+        self.p_readout_mean_q =  np.mean(self.p_readout_dc_q)
+        self.p_readout_mean_mag = math.hypot(self.p_readout_mean_i,self.p_readout_mean_q)
+        self.p_readout_mean_arg = math.atan2(self.p_readout_mean_q,self.p_readout_mean_q)/math.pi
+
 
 class LLExpSetup(LLObject):
     def __init__(self):
@@ -483,7 +630,6 @@ class LLExpSetup(LLObject):
             mwcl.plan_experiment()
 
     def execute(self, experiment_length):
-
         # get control lines to set experiment params
         for mwcl in self.p_mwcls:
             mwcl.execute(experiment_length)
@@ -497,4 +643,6 @@ class LLExpSetup(LLObject):
         for instrument in LL.LL_ROOT.instruments.ll_children:
             instrument.readout_internal()
 
-        pass
+        for mwcl in self.p_mwcls:
+            mwcl.process_readout()
+

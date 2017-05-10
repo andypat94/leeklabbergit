@@ -64,7 +64,11 @@ class LLObject(object):
 
     @staticmethod
     def from_xml_element(element,top_level=True,i=0):
-        constructor = getattr(LL, element.tag)
+        try:
+            constructor = getattr(LL, element.tag)
+        except AttributeError:
+            print "unknown class %s" % element.tag
+            constructor = LL.LLObject
         #print ('Creating',element.tag,'depth',i)
         obj = constructor()
         if isinstance(obj, LL.LLRoot):
@@ -86,7 +90,9 @@ class LLObject(object):
         else:
             for params_element in [params_element for params_element in self.xml_element if params_element.tag == 'params']:
                 for param_element in params_element:
-                    self.get_parameter(param_element.get('name')).from_xml_element(param_element,topobj)
+                    param = self.get_parameter(param_element.get('name'))
+                    if param is not None:
+                        param.from_xml_element(param_element,topobj)
 
 
     def create_xml_element(self, parent_element=None, top_obj=None):
@@ -266,6 +272,9 @@ class LLObjectParameter(object):
 
         element.set('name', self.label)
 
+        if self.select_from is not None:
+            element.set('select_from', str(self.select_from.get_abs_path()))
+
         val = self.get_value()
 
         if self.ptype in (self.PTYPE_BOOL,self.PTYPE_INT,self.PTYPE_FLOAT,self.PTYPE_STR):
@@ -273,7 +282,7 @@ class LLObjectParameter(object):
         elif self.ptype in (self.PTYPE_NUMPY,):
             element.set('shape', str(val.shape))
             element.set('dtype', str(val.dtype.str))
-            element.text = base64.b64encode(val)
+            #element.text = base64.b64encode(val) #todo: save numpy arrays when necessary?
         elif self.ptype in (self.PTYPE_LLOBJECT,self.PTYPE_LLPARAMETER,):
             if val is None:
                 element.text = ""
@@ -299,6 +308,10 @@ class LLObjectParameter(object):
 
     def from_xml_element(self,element,topobj):
         #print("loading param", self.ref_obj, self.label)
+        val = element.get('select_from')
+        if val is not None:
+            self.select_from=topobj.get_object_from_abs_path(literal_eval(val))
+
         if self.ptype in (self.PTYPE_BOOL,self.PTYPE_INT,self.PTYPE_FLOAT):
             self.set_value(literal_eval(element.text))
         elif self.ptype in (self.PTYPE_STR,):
@@ -311,7 +324,7 @@ class LLObjectParameter(object):
             shape = literal_eval(element.get('shape'))
             dtype = element.get('dtype')
             if element.text is None:
-                array = np.empty(shape=shape, dtype=dtype)
+                array = np.zeros(shape=shape, dtype=dtype)
             else:
                 array = np.frombuffer(base64.decodestring(element.text),dtype=dtype)
                 array = array.reshape(shape)

@@ -187,7 +187,7 @@ class LLController(object):
         gate["Rotation Axis"] = 'X'  # drive on X
         gate["Rotation Angle"] = 0.5  # pi pulse
 
-        gate2 = LLTasks.LLTaskDelay(LL.LL_ROOT.task)
+        gate2 = LLTasks.LLTaskDelay(LL.LL_ROOT.task)f
         gate2["Delay Time"] = 1e-6
         gate2["Task Dependences"] = [gate, ]
 
